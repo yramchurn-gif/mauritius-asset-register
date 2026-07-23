@@ -1,0 +1,6 @@
+# Real asset data (staff names + serials) must never reach the public repo.
+private/
+
+.DS_Store
+*.log
+node_modules/

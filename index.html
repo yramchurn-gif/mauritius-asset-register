@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Physical asset register and quarterly audit for the Mauritius (Ebène) office — Game Play Network.">
+  <meta name="color-scheme" content="light dark">
+  <title>Mauritius Asset Register</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%230C5B67'/%3E%3Ctext x='50' y='63' font-family='monospace' font-size='34' font-weight='700' fill='white' text-anchor='middle'%3EMUR%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <div class="brand">
+      <div class="mark">MUR</div>
+      <div>
+        <h1>Mauritius Asset Register</h1>
+        <div class="sub" id="office">Ebène · Regus · Game Play Network</div>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <span class="conn is-sample" id="conn" title="Data source"><span class="cdot"></span><span class="ctext clbl">Local demo</span></span>
+      <button class="btn" id="btnAdd" title="Add an asset">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        <span class="lbl">Add</span>
+      </button>
+      <button class="btn" id="btnBackup" title="Backup / restore data">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+        <span class="lbl">Backup</span>
+      </button>
+      <button class="btn btn-primary" id="btnReport" title="Compile the quarterly report for Gerard">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v14H5.2L4 20z"/><path d="M8 9h8M8 13h5"/></svg>
+        <span class="lbl">Report to Gerard</span>
+      </button>
+      <button class="btn" id="authBtn" title="Sign in">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>
+        <span class="lbl">Sign in</span>
+      </button>
+      <button class="btn icon-btn btn-ghost" id="btnTheme" title="Toggle light / dark" aria-label="Toggle light or dark theme">
+        <svg id="iconTheme" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="masthead">
+    <div class="plate">
+      <div class="plate-title">
+        <div class="eyebrow">Physical asset inventory</div>
+        <h2>Every device in the Ebène office, on one register.</h2>
+        <p class="lede">Laptops and office infrastructure, each tracked by its <span class="mono">MUR</span> asset tag. Run the quarterly audit inline, then send Gerard a compiled report.</p>
+      </div>
+      <div class="quarter-pill">
+        <span class="dot"></span>
+        <div>
+          <div class="qcap">Audit period</div>
+          <span class="qlabel" id="qLabel">Q3 2026</span>
+        </div>
+        <select id="qSelect" aria-label="Select audit quarter"></select>
+      </div>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="k">Total assets</div>
+        <div class="v tnum" id="sTotal">0</div>
+        <div class="u" id="sTotalU">in service</div>
+      </div>
+      <div class="stat">
+        <div class="k">Laptops</div>
+        <div class="v tnum" id="sLaptops">0</div>
+        <div class="u" id="sLaptopsU">Apple + Windows</div>
+        <div class="spark" id="sparkChips"></div>
+      </div>
+      <div class="stat progress-panel">
+        <div class="progress-head">
+          <div>
+            <div class="k">Audit progress · <span id="pQuarter" class="mono">Q3 2026</span></div>
+            <div class="big"><span id="pDone">0</span><small>/<span id="pTotal">0</span> verified</small></div>
+          </div>
+          <div style="text-align:right">
+            <div class="k">Attention</div>
+            <div class="big tnum" id="pFlags" style="color:var(--bad)">0</div>
+          </div>
+        </div>
+        <div class="meter" aria-hidden="true">
+          <i class="m-ok" id="mOk" style="width:0%"></i>
+          <i class="m-bad" id="mBad" style="width:0%"></i>
+        </div>
+        <div class="legend">
+          <span><i class="swatch" style="background:var(--ok)"></i>Verified <b id="lgOk">0</b></span>
+          <span><i class="swatch" style="background:var(--bad)"></i>Flagged <b id="lgBad">0</b></span>
+          <span><i class="swatch" style="background:var(--track);border:1px solid var(--line-2)"></i>Pending <b id="lgPend">0</b></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="mode-banner sample" id="modeBanner" role="status" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+      <div class="mb-text"><b>Sample data.</b> Sign in to load the live register.</div>
+      <div class="b-actions"><button class="btn" style="height:30px" onclick="document.getElementById('authBtn').click()">Sign in</button></div>
+    </div>
+
+    <div class="mode-banner audit" id="auditBanner" role="status">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <div><b>Audit mode is on.</b> Mark each asset verified or flag an issue — everything saves automatically.</div>
+      <div class="b-actions"><button class="btn" id="btnAuditDone" style="height:30px">Finish audit</button></div>
+    </div>
+  </section>
+
+  <div class="controls">
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input type="search" id="search" placeholder="Search tag, person, device, serial…" aria-label="Search the register">
+    </div>
+    <div class="segmented" id="filterType" role="group" aria-label="Filter by type">
+      <button data-f="all" aria-pressed="true">All</button>
+      <button data-f="laptop" aria-pressed="false">Laptops</button>
+      <button data-f="infra" aria-pressed="false">Infrastructure</button>
+      <button data-f="flag" aria-pressed="false">Flagged</button>
+    </div>
+    <div class="segmented" id="groupBy" role="group" aria-label="Group by">
+      <span class="seg-label" aria-hidden="true">Group</span>
+      <button data-g="type" aria-pressed="true">Type</button>
+      <button data-g="chip" aria-pressed="false">Chip</button>
+      <button data-g="status" aria-pressed="false">Status</button>
+    </div>
+    <button class="btn btn-primary" id="btnAudit" style="margin-left:auto">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+      <span id="auditBtnLabel">Start Q3 audit</span>
+    </button>
+  </div>
+
+  <section class="register" id="register"></section>
+
+  <footer class="foot">
+    <span class="saved"><span class="dot"></span><span id="savedText">Loading…</span></span>
+    <span>Front-end on GitHub Pages · data in Supabase (Postgres) behind login</span>
+    <span style="margin-left:auto">The same UI runs on any backend — this is the stepping stone off Apps Script.</span>
+  </footer>
+</main>
+
+<input type="file" id="fileImport" accept="application/json,.json" hidden>
+
+<div class="modal-scrim" id="scrim">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+    <div class="modal-head">
+      <h3 id="modalTitle">Dialog</h3>
+      <button class="btn icon-btn btn-ghost" id="modalClose" aria-label="Close dialog">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <div class="modal-body" id="modalBody"></div>
+    <div class="modal-foot" id="modalFoot"></div>
+  </div>
+</div>
+
+<div class="toast-host" id="toastHost" aria-live="polite"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
