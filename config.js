@@ -11,5 +11,7 @@ window.MUR_CONFIG = {
   SUPABASE_URL: "https://tbtwpeuoglafjklsgklz.supabase.co",
   SUPABASE_KEY: "sb_publishable_p0C8hgqwMplm1EiL6yeiTQ_4IuDIcvC",
   OFFICE: "Ebène · Regus",
-  REPORT_TO: "gcateau@bspot.com"
+  // Report recipient. Temporarily set to Yuvan for testing the email formatting.
+  // Switch to "gcateau@bspot.com" once the format is signed off.
+  REPORT_TO: "yramchurn@bspot.com"
 };
