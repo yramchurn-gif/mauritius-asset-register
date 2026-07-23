@@ -50,3 +50,18 @@ begin
   begin execute 'alter publication supabase_realtime add table public.assets'; exception when duplicate_object then null; end;
   begin execute 'alter publication supabase_realtime add table public.audit_entries'; exception when duplicate_object then null; end;
 end $$;
+
+-- ---- spares / stock (added for the Spares view) ---------------------------
+create table if not exists public.spares (
+  id       bigint generated always as identity primary key,
+  item     text not null,
+  category text not null default 'other',
+  qty      int  not null default 0,
+  min_qty  int  not null default 0,
+  note     text not null default '',
+  updated_at timestamptz not null default now()
+);
+alter table public.spares enable row level security;
+drop policy if exists "auth full access - spares" on public.spares;
+create policy "auth full access - spares" on public.spares for all to authenticated using (true) with check (true);
+do $$ begin begin execute 'alter publication supabase_realtime add table public.spares'; exception when duplicate_object then null; end; end $$;
