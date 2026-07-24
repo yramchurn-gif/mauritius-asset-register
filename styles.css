@@ -371,6 +371,14 @@ body.audit-on .check-line{display:flex; grid-column:1/-1; gap:12px; margin-top:1
   .proc-edit{grid-row:1; grid-column:3;}
 }
 
+/* ----------------------------- new-hire kit editor ------------------------- */
+.kit-head{display:grid; grid-template-columns:1fr 70px 100px 36px; gap:8px; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); font-weight:700; margin-bottom:6px; padding:0 2px;}
+.kit-row{display:grid; grid-template-columns:1fr 70px 100px 36px; gap:8px; margin-bottom:8px; align-items:center;}
+.kit-row input{height:36px; padding:0 10px; border-radius:8px; border:1px solid var(--line-2); background:var(--surface-2); color:var(--ink); font-size:13px; font-family:inherit; width:100%;}
+.kit-row input:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft);}
+.kit-row .k-del{color:var(--ink-3);}
+.kit-row .k-del:hover{color:var(--flag);}
+
 /* -------------------------------- modal ------------------------------------ */
 .modal-scrim{position:fixed; inset:0; background:color-mix(in srgb,var(--ink) 42%,transparent); backdrop-filter:blur(3px); display:none; place-items:center; z-index:80; padding:22px;}
 .modal-scrim.show{display:grid; animation:fade .16s ease;}
