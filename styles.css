@@ -345,6 +345,32 @@ body.audit-on .check-line{display:flex; grid-column:1/-1; gap:12px; margin-top:1
   .inv-actions{grid-column:1/-1; justify-content:flex-start;}
 }
 
+/* ------------------------------ procurement -------------------------------- */
+.proc-row{display:grid; grid-template-columns:34px 1.8fr 1.1fr 0.9fr 96px auto; align-items:center; gap:14px; background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:12px 15px; transition:border-color .13s,background .13s;}
+.proc-row:hover{border-color:var(--line-2); background:var(--surface-2);}
+.proc-row.is-recd{opacity:.62;}
+.proc-row.is-recd .proc-item{text-decoration:line-through;}
+.proc-check{width:26px; height:26px; border-radius:50%; border:1.6px solid var(--line-2); background:var(--surface); display:grid; place-items:center; color:transparent; flex:none; transition:background .13s,border-color .13s,color .13s;}
+.proc-check svg{width:15px; height:15px;}
+.proc-check:hover{border-color:var(--accent);}
+.proc-check.on{background:var(--accent); border-color:var(--accent); color:#fff;}
+.proc-main{min-width:0;}
+.proc-item{font-weight:600; font-size:14px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.proc-sub{font-size:11.5px; color:var(--ink-3); margin-top:1px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+.proc-sub .cap{text-transform:capitalize;}
+.proc-need{color:var(--warn); font-weight:600;}
+.proc-qty{font-size:11.5px; color:var(--ink-3); font-family:var(--font-mono);}
+.proc-total{font-family:var(--font-mono); font-weight:700; font-size:13.5px; color:var(--ink);}
+.proc-status{font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; text-align:center; padding:3px 0; border-radius:100px; border:1px solid transparent;}
+.proc-status.st-planned{color:var(--ink-2); background:var(--surface-2); border-color:var(--line);}
+.proc-status.st-ordered{color:var(--info); background:var(--info-soft); border-color:var(--info-line);}
+.proc-status.st-received{color:var(--ok); background:var(--ok-soft); border-color:var(--ok-line);}
+@media (max-width:760px){
+  .proc-row{grid-template-columns:34px 1fr auto; row-gap:8px;}
+  .proc-qty,.proc-total,.proc-status{grid-column:2/-1; text-align:left;}
+  .proc-edit{grid-row:1; grid-column:3;}
+}
+
 /* -------------------------------- modal ------------------------------------ */
 .modal-scrim{position:fixed; inset:0; background:color-mix(in srgb,var(--ink) 42%,transparent); backdrop-filter:blur(3px); display:none; place-items:center; z-index:80; padding:22px;}
 .modal-scrim.show{display:grid; animation:fade .16s ease;}

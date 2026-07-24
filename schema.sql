@@ -164,3 +164,26 @@ end $$;
 drop trigger if exists assets_history_log on public.assets;
 create trigger assets_history_log after insert or update or delete on public.assets
   for each row execute function public.log_asset_change();
+
+-- ---- procurement (planned purchases) --------------------------------------
+-- Planning list for upcoming buys (e.g. new-hire kit). Items move
+-- planned -> ordered -> received; the app tots up estimated spend.
+create table if not exists public.procurement (
+  id         bigint generated always as identity primary key,
+  item       text not null default '',
+  category   text not null default 'other',
+  for_who    text not null default '',       -- new hire / reason
+  qty        numeric not null default 1,
+  unit_cost  numeric not null default 0,
+  currency   text not null default 'Rs',
+  needed_by  date,
+  status     text not null default 'planned', -- planned | ordered | received
+  note       text not null default '',
+  created_at timestamptz not null default now()
+);
+alter table public.procurement enable row level security;
+drop policy if exists "auth full access - procurement" on public.procurement;
+create policy "auth full access - procurement" on public.procurement for all to authenticated using (true) with check (true);
+alter table public.procurement drop constraint if exists procurement_status_chk;
+alter table public.procurement add constraint procurement_status_chk check (status in ('planned','ordered','received'));
+do $$ begin begin execute 'alter publication supabase_realtime add table public.procurement'; exception when duplicate_object then null; end; end $$;
