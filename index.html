@@ -40,6 +40,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z"/><path d="M14 2v6h6"/><path d="M9 13h6M9 17h4"/></svg>
         <span>Invoicing</span><span class="nav-count" id="navInvoicesCount"></span>
       </button>
+      <button class="nav-item" id="navProcurement" data-view="procurement">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L23 7H6"/></svg>
+        <span>Procurement</span><span class="nav-count" id="navProcurementCount"></span>
+      </button>
     </nav>
 
     <div class="side-foot">
@@ -86,6 +90,12 @@
         </button>
         <button class="btn ctx-invoices" id="btnAddInvoice" title="Record a purchase / invoice" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Add invoice</span>
+        </button>
+        <button class="btn ctx-procurement" id="btnKit" title="Add the standard new-hire kit" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7 12 3 4 7v10l8 4 8-4z"/><path d="M4 7l8 4 8-4M12 11v10"/></svg><span class="lbl">New-hire kit</span>
+        </button>
+        <button class="btn ctx-procurement" id="btnAddPurchase" title="Add a planned purchase" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Add item</span>
         </button>
         <button class="btn" id="btnReport" title="Compile the quarterly equipment-check report">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v14H5.2L4 20z"/><path d="M8 9h8M8 13h5"/></svg><span class="lbl">Report</span>
@@ -188,6 +198,19 @@
           <p class="inv-lede">Purchase log for the Mauritius office — vendor, item, amount and payment reference for every transaction, with the receipt attached.</p>
         </div>
         <section id="invoices"></section>
+      </section>
+
+      <!-- ===================== PROCUREMENT VIEW ===================== -->
+      <section class="view" id="viewProcurement" hidden>
+        <div class="inv-head">
+          <div class="inv-kpis">
+            <div class="inv-kpi"><span class="inv-k">To buy</span><span class="inv-v tnum" id="procOpen">0</span></div>
+            <div class="inv-kpi"><span class="inv-k">Est. outstanding</span><span class="inv-v tnum" id="procSpend">—</span></div>
+            <div class="inv-kpi"><span class="inv-k">Received</span><span class="inv-v tnum" id="procDone">0</span></div>
+          </div>
+          <p class="inv-lede">Planned purchases for upcoming needs (e.g. new hires). Tick items off as they arrive.</p>
+        </div>
+        <section id="procurement"></section>
       </section>
 
       <footer class="foot">

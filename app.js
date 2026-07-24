@@ -77,6 +77,12 @@ const SAMPLE_INVOICES = [
   {invoice_no:'INV00003',purchase_date:'2026-05-26',vendor:'Brand House',buyer:'iWynn Solutions LTD',representative:'S. Pomosawmy',item_description:'Jabra Headset',category:'peripheral',quantity:1,unit_price:15000,total_amount:15000,currency:'Rs',payment_method:'Bank transfer',transaction_ref:'',receipt_url:'',note:''},
   {invoice_no:'INV00005',purchase_date:'2026-05-26',vendor:'Veeramootoo Trading',buyer:'iWynn Solutions LTD',representative:'R. Soodarchand',item_description:'iPhone 14 Pro',category:'phone',quantity:1,unit_price:23500,total_amount:23500,currency:'Rs',payment_method:'JUICE',transaction_ref:'FT26XXXXVW82',receipt_url:'',note:''}
 ];
+/* Sample planned purchases (procurement). */
+const SAMPLE_PROCUREMENT=[
+  {item:'Laptop (MacBook Air 13" M4)',category:'laptop',for_who:'New hire — CRM',qty:1,unit_cost:45000,currency:'Rs',needed_by:'2026-08-15',status:'planned',note:''},
+  {item:'Work phone (iPhone)',category:'phone',for_who:'New hire — CRM',qty:1,unit_cost:22500,currency:'Rs',needed_by:'2026-08-15',status:'ordered',note:''},
+  {item:'Monitor',category:'monitor',for_who:'Office spare',qty:2,unit_cost:8000,currency:'Rs',needed_by:'',status:'planned',note:''}
+];
 function rowToObj(r){ return { tag:r[0], assignee:r[1], reassignedFrom:r[2], type:r[3], kind:r[4], model:r[5], variant:r[6], spec:r[7], chip:r[8], serial:r[9], retired:false }; }
 
 /* ------------------------------ db <-> app mapping ------------------------- */
@@ -86,12 +92,14 @@ function entryFromDb(r){ return {status:r.status||"pending", note:r.note||"", at
 function spareFromDb(r){ return {id:r.id, item:r.item, category:r.category, qty:r.qty, min_qty:r.min_qty, note:r.note||"", low_alert_sent:!!r.low_alert_sent}; }
 function invoiceFromDb(r){ return {id:r.id, invoice_no:r.invoice_no||"", purchase_date:r.purchase_date||"", vendor:r.vendor||"", buyer:r.buyer||"", representative:r.representative||"", item_description:r.item_description||"", category:r.category||"other", quantity:Number(r.quantity||0), unit_price:Number(r.unit_price||0), total_amount:Number(r.total_amount||0), currency:r.currency||"Rs", payment_method:r.payment_method||"", transaction_ref:r.transaction_ref||"", receipt_path:r.receipt_path||"", receipt_url:r.receipt_url||"", note:r.note||"", uploaded_by:r.uploaded_by||""}; }
 function invoiceToDb(v){ return {invoice_no:v.invoice_no, purchase_date:v.purchase_date||null, vendor:v.vendor, buyer:v.buyer, representative:v.representative, item_description:v.item_description, category:v.category, quantity:v.quantity, unit_price:v.unit_price, total_amount:v.total_amount, currency:v.currency, payment_method:v.payment_method, transaction_ref:v.transaction_ref, receipt_path:v.receipt_path, receipt_url:v.receipt_url, note:v.note, uploaded_by:v.uploaded_by}; }
+function procFromDb(r){ return {id:r.id, item:r.item||"", category:r.category||"other", for_who:r.for_who||"", qty:Number(r.qty||0), unit_cost:Number(r.unit_cost||0), currency:r.currency||"Rs", needed_by:r.needed_by||"", status:r.status||"planned", note:r.note||""}; }
+function procToDb(p){ return {item:p.item, category:p.category, for_who:p.for_who, qty:p.qty, unit_cost:p.unit_cost, currency:p.currency, needed_by:p.needed_by||null, status:p.status, note:p.note}; }
 
 /* --------------------------------- stores ---------------------------------- */
 const LS_KEY="mur_sample_store";
 function lsRead(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)||"null"); }catch(e){ return null; } }
 function lsWrite(o){ try{ localStorage.setItem(LS_KEY,JSON.stringify(o)); }catch(e){} }
-function lsInit(){ let o=lsRead(); if(!o){ o={ assets:SAMPLE.map(rowToObj), entries:{}, spares:SAMPLE_SPARES.map((s,i)=>Object.assign({id:i+1},s)), invoices:SAMPLE_INVOICES.map((v,i)=>Object.assign({id:i+1},v)) }; lsWrite(o); } if(!o.spares){ o.spares=SAMPLE_SPARES.map((s,i)=>Object.assign({id:i+1},s)); lsWrite(o); } if(!o.invoices){ o.invoices=SAMPLE_INVOICES.map((v,i)=>Object.assign({id:i+1},v)); lsWrite(o); } return o; }
+function lsInit(){ let o=lsRead(); if(!o){ o={ assets:SAMPLE.map(rowToObj), entries:{}, spares:SAMPLE_SPARES.map((s,i)=>Object.assign({id:i+1},s)), invoices:SAMPLE_INVOICES.map((v,i)=>Object.assign({id:i+1},v)) }; lsWrite(o); } if(!o.spares){ o.spares=SAMPLE_SPARES.map((s,i)=>Object.assign({id:i+1},s)); lsWrite(o); } if(!o.invoices){ o.invoices=SAMPLE_INVOICES.map((v,i)=>Object.assign({id:i+1},v)); lsWrite(o); } if(!o.procurement){ o.procurement=SAMPLE_PROCUREMENT.map((p,i)=>Object.assign({id:i+1},p)); lsWrite(o); } return o; }
 
 const localStore = {
   live:false,
@@ -111,7 +119,11 @@ const localStore = {
   async updateInvoice(id,patch){ const o=lsInit(); const i=o.invoices.findIndex(x=>x.id===id); if(i>=0){ o.invoices[i]=Object.assign(o.invoices[i],patch); lsWrite(o); } },
   async delInvoice(id){ const o=lsInit(); o.invoices=o.invoices.filter(x=>x.id!==id); lsWrite(o); },
   async uploadReceipt(){ throw new Error("Sign in to upload receipts"); },
-  async receiptUrl(){ return ""; }
+  async receiptUrl(){ return ""; },
+  async allProcurement(){ return lsInit().procurement.slice(); },
+  async addPurchase(p){ const o=lsInit(); const id=(o.procurement.reduce((m,x)=>Math.max(m,x.id),0)||0)+1; o.procurement.push(Object.assign({id},p)); lsWrite(o); return id; },
+  async updatePurchase(id,patch){ const o=lsInit(); const i=o.procurement.findIndex(x=>x.id===id); if(i>=0){ o.procurement[i]=Object.assign(o.procurement[i],patch); lsWrite(o); } },
+  async delPurchase(id){ const o=lsInit(); o.procurement=o.procurement.filter(x=>x.id!==id); lsWrite(o); }
 };
 
 const supaStore = {
@@ -132,14 +144,18 @@ const supaStore = {
   async updateInvoice(id,patch){ const {error}=await sb.from("invoices").update(invoiceToDb(Object.assign({},patch))).eq("id",id); if(error)throw error; },
   async delInvoice(id){ const {error}=await sb.from("invoices").delete().eq("id",id); if(error)throw error; },
   async uploadReceipt(file){ const safe=file.name.replace(/[^\w.\-]+/g,"_"); const path=Date.now()+"_"+safe; const {error}=await sb.storage.from("receipts").upload(path,file,{upsert:false,contentType:file.type||"application/octet-stream"}); if(error)throw error; return path; },
-  async receiptUrl(path){ if(!path)return ""; const {data,error}=await sb.storage.from("receipts").createSignedUrl(path,3600); if(error)throw error; return data.signedUrl; }
+  async receiptUrl(path){ if(!path)return ""; const {data,error}=await sb.storage.from("receipts").createSignedUrl(path,3600); if(error)throw error; return data.signedUrl; },
+  async allProcurement(){ const {data,error}=await sb.from("procurement").select("*").order("status").order("needed_by",{ascending:true,nullsFirst:false}).order("id"); if(error)throw error; return (data||[]).map(procFromDb); },
+  async addPurchase(p){ const {data,error}=await sb.from("procurement").insert(procToDb(p)).select("id").single(); if(error)throw error; return data&&data.id; },
+  async updatePurchase(id,patch){ const db=Object.assign({},patch); if("needed_by" in db) db.needed_by=db.needed_by||null; delete db.id; const {error}=await sb.from("procurement").update(db).eq("id",id); if(error)throw error; },
+  async delPurchase(id){ const {error}=await sb.from("procurement").delete().eq("id",id); if(error)throw error; }
 };
 
 let store = localStore;
 
 /* --------------------------------- app state ------------------------------- */
 const state = {
-  view:"register", assets:[], entries:{}, spares:[], invoices:[], quarter:currentQuarter(),
+  view:"register", assets:[], entries:{}, spares:[], invoices:[], procurement:[], quarter:currentQuarter(),
   filter:"all", group:"type", q:"", spareSort:"qty", auditMode:false, loading:true,
   user:null, auditor:"", gerardEmail:CFG.REPORT_TO||"gcateau@bspot.com",
   stockAlertTo:(CFG.STOCK_ALERT_TO&&CFG.STOCK_ALERT_TO.length)?CFG.STOCK_ALERT_TO:["yramchurn@bspot.com","rsoodarchand@bspot.com"]
@@ -273,6 +289,7 @@ function renderStats(){
   $("#navRegisterCount").textContent=s.total;
   $("#navSparesCount").textContent=state.spares.length||"";
   $("#navInvoicesCount").textContent=state.invoices.length||"";
+  { const openp=state.procurement.filter(p=>p.status!=="received").length; $("#navProcurementCount").textContent=openp||""; }
 }
 
 /* --------------------------------- register -------------------------------- */
@@ -648,13 +665,106 @@ function onInvoicesClick(ev){
   if(btn.dataset.act==="edit"){ openInvoiceModal(v); }
 }
 
+/* ------------------------------- procurement ------------------------------- */
+const PROC_STATUS={planned:{l:"Planned",c:"pl"},ordered:{l:"Ordered",c:"or"},received:{l:"Received",c:"rc"}};
+function procTotal(p){ return (Number(p.qty)||0)*(Number(p.unit_cost)||0); }
+function procDate(d){ if(!d) return ""; const x=new Date(d); return isNaN(x)?esc(d):x.toLocaleDateString("en-GB",{day:"2-digit",month:"short"}); }
+function procPass(p){ if(!state.q) return true; return (p.item+" "+p.for_who+" "+p.category+" "+p.status+" "+p.note).toLowerCase().includes(state.q.toLowerCase()); }
+function procRowHTML(p){
+  const recd=p.status==="received";
+  return '<div class="proc-row'+(recd?" is-recd":"")+'" data-id="'+p.id+'">'+
+    '<button class="proc-check'+(recd?" on":"")+'" data-act="recv" aria-pressed="'+recd+'" title="'+(recd?"Mark not received":"Mark received")+'">'+CHECK+'</button>'+
+    '<div class="proc-main"><div class="proc-item">'+esc(p.item||"—")+'</div><div class="proc-sub">'+(p.for_who?esc(p.for_who)+' · ':'')+'<span class="cap">'+esc(p.category)+'</span>'+(p.needed_by&&!recd?' · <span class="proc-need">need by '+procDate(p.needed_by)+'</span>':'')+'</div></div>'+
+    '<div class="proc-qty">'+(Number(p.qty)||1)+' × '+fmtMoney(p.unit_cost,p.currency)+'</div>'+
+    '<div class="proc-total">'+fmtMoney(procTotal(p),p.currency)+'</div>'+
+    '<div class="proc-status st-'+p.status+'">'+(PROC_STATUS[p.status]||PROC_STATUS.planned).l+'</div>'+
+    '<button class="btn btn-ghost icon-btn proc-edit" data-act="edit" aria-label="Edit">'+EDIT+'</button>'+
+  '</div>';
+}
+function renderProcurement(){
+  const host=$("#procurement");
+  if(state.loading){ host.innerHTML=Array(3).fill('<div class="skeleton"></div>').join(""); return; }
+  const list=state.procurement.filter(procPass).slice().sort((a,b)=>{
+    const ra=a.status==="received"?1:0, rb=b.status==="received"?1:0; if(ra!==rb) return ra-rb;
+    const na=a.needed_by||"9999", nb=b.needed_by||"9999"; if(na!==nb) return na<nb?-1:1;
+    return (a.item||"").localeCompare(b.item||"");
+  });
+  const open=state.procurement.filter(p=>p.status!=="received");
+  const outstanding=open.reduce((m,p)=>m+procTotal(p),0);
+  const cur=(state.procurement[0]&&state.procurement[0].currency)||"Rs";
+  $("#procOpen").textContent=open.length;
+  $("#procSpend").textContent=fmtMoney(outstanding,cur);
+  $("#procDone").textContent=state.procurement.filter(p=>p.status==="received").length+" / "+state.procurement.length;
+  host.innerHTML = list.length ? '<div class="inv-list">'+list.map(procRowHTML).join("")+'</div>'
+    : '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L23 7H6"/></svg><div>'+(state.procurement.length?"No items match this search.":"Nothing planned yet. Add an item or drop in a new-hire kit.")+'</div></div>';
+}
+function openPurchaseModal(p){
+  if(!store.live){ toast("Sign in to plan purchases",true); openAuthModal(); return; }
+  const isNew=!p;
+  p=p||{item:"",category:"laptop",for_who:"",qty:1,unit_cost:0,currency:"Rs",needed_by:"",status:"planned",note:""};
+  const catOpts=INV_CATS.map(c=>'<option value="'+c+'"'+(p.category===c?" selected":"")+'>'+c.charAt(0).toUpperCase()+c.slice(1)+'</option>').join("");
+  const stOpts=Object.keys(PROC_STATUS).map(s=>'<option value="'+s+'"'+(p.status===s?" selected":"")+'>'+PROC_STATUS[s].l+'</option>').join("");
+  openModal(isNew?"Plan a purchase":"Edit planned purchase",
+    '<div class="field"><label>Item</label><input id="p_item" value="'+esc(p.item)+'" placeholder="e.g. Laptop (MacBook Air)"></div>'+
+    '<div class="field"><label>For whom / reason</label><input id="p_for" value="'+esc(p.for_who)+'" placeholder="e.g. New hire — CRM"></div>'+
+    '<div class="field-row"><div class="field"><label>Category</label><select id="p_cat">'+catOpts+'</select></div><div class="field"><label>Needed by</label><input id="p_need" type="date" value="'+esc(p.needed_by||"")+'"></div></div>'+
+    '<div class="field-row"><div class="field"><label>Quantity</label><input id="p_qty" type="number" min="0" step="1" value="'+p.qty+'"></div><div class="field"><label>Est. unit cost</label><input id="p_cost" type="number" min="0" step="0.01" value="'+p.unit_cost+'"></div></div>'+
+    '<div class="field-row"><div class="field"><label>Currency</label><input id="p_cur" value="'+esc(p.currency||"Rs")+'"></div><div class="field"><label>Status</label><select id="p_status">'+stOpts+'</select></div></div>'+
+    '<div class="field"><label>Note (optional)</label><input id="p_note" value="'+esc(p.note)+'"></div>',
+    (isNew?"":'<button class="btn" id="mDelete" style="margin-right:auto;color:var(--flag);border-color:var(--flag-line)">Remove</button>')+'<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">'+(isNew?"Add to plan":"Save")+'</button>');
+  $("#p_item").focus(); $("#mCancel").onclick=closeModal;
+  if(!isNew) $("#mDelete").onclick=async()=>{ if(confirm("Remove this planned purchase?")){ try{ await store.delPurchase(p.id); state.procurement=state.procurement.filter(x=>x.id!==p.id); closeModal(); renderAll(); toast("Removed"); }catch(e){ toast(e.message,true); } } };
+  $("#mSave").onclick=async()=>{
+    const obj={ item:$("#p_item").value.trim(), for_who:$("#p_for").value.trim(), category:$("#p_cat").value, needed_by:$("#p_need").value||null, qty:parseFloat($("#p_qty").value)||0, unit_cost:parseFloat($("#p_cost").value)||0, currency:$("#p_cur").value.trim()||"Rs", status:$("#p_status").value, note:$("#p_note").value.trim() };
+    if(!obj.item){ toast("Item is required",true); return; }
+    try{
+      if(isNew){ await store.addPurchase(obj); } else { await store.updatePurchase(p.id,obj); }
+      state.procurement=await store.allProcurement(); closeModal(); renderAll(); toast(isNew?"Added to plan":"Saved");
+    }catch(e){ toast(e.message,true); }
+  };
+}
+async function onProcurementClick(ev){
+  const btn=ev.target.closest("button[data-act]"); if(!btn)return;
+  const id=Number(btn.closest(".proc-row").dataset.id); const p=state.procurement.find(x=>x.id===id); if(!p)return;
+  if(btn.dataset.act==="edit"){ openPurchaseModal(p); return; }
+  if(btn.dataset.act==="recv"){
+    if(!store.live){ toast("Sign in to update the plan",true); openAuthModal(); return; }
+    const ns=p.status==="received"?"planned":"received"; p.status=ns; renderProcurement(); renderStats();
+    try{ await store.updatePurchase(id,{status:ns}); setSaved(ns==="received"?"Marked received":"Reopened"); }catch(e){ toast(e.message,true); }
+  }
+}
+const NEWHIRE_KIT=[
+  {item:'Laptop (MacBook Air 13" M4)',category:'laptop',qty:1,unit_cost:45000},
+  {item:'Work phone (iPhone)',category:'phone',qty:1,unit_cost:22500},
+  {item:'Monitor',category:'monitor',qty:1,unit_cost:8000},
+  {item:'USB-C charger',category:'accessory',qty:1,unit_cost:1500},
+  {item:'USB-C hub',category:'accessory',qty:1,unit_cost:2000},
+  {item:'Headset',category:'accessory',qty:1,unit_cost:2500},
+  {item:'Mouse',category:'accessory',qty:1,unit_cost:800}
+];
+function addNewHireKit(){
+  if(!store.live){ toast("Sign in to plan purchases",true); openAuthModal(); return; }
+  openModal("New-hire kit",
+    '<p class="hint">Adds the standard onboarding bundle as planned purchases. Edit costs/quantities after.</p><div class="field"><label>New hire name / reference</label><input id="k_name" placeholder="e.g. New hire — CRM"></div>'+
+    '<div class="report-preview">'+NEWHIRE_KIT.map(k=>"• "+k.item).join("\n")+'</div>',
+    '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Add '+NEWHIRE_KIT.length+' items</button>');
+  $("#k_name").focus(); $("#mCancel").onclick=closeModal;
+  $("#mSave").onclick=async()=>{
+    const who=$("#k_name").value.trim()||"New hire"; $("#mSave").disabled=true;
+    try{ for(const k of NEWHIRE_KIT){ await store.addPurchase(Object.assign({for_who:who,currency:"Rs",needed_by:null,status:"planned",note:""},k)); }
+      state.procurement=await store.allProcurement(); closeModal(); renderAll(); toast("New-hire kit added for "+who); }
+    catch(e){ toast(e.message,true); $("#mSave").disabled=false; }
+  };
+}
+
 /* --------------------------------- views ----------------------------------- */
-function renderView(){ if(state.view==="spares") renderSpares(); else if(state.view==="invoices") renderInvoices(); else renderRegister(); }
+function renderView(){ if(state.view==="spares") renderSpares(); else if(state.view==="invoices") renderInvoices(); else if(state.view==="procurement") renderProcurement(); else renderRegister(); }
 function renderAll(){ renderStats(); renderView(); }
 const VIEW_META={
   register:{title:"Register",sub:"Assigned equipment",search:"Search tag, person, device…"},
   spares:{title:"Spares & stock",sub:"Unassigned inventory",search:"Search spares…"},
-  invoices:{title:"Invoicing",sub:"Purchases & receipts",search:"Search vendor, item, reference…"}
+  invoices:{title:"Invoicing",sub:"Purchases & receipts",search:"Search vendor, item, reference…"},
+  procurement:{title:"Procurement",sub:"Planned purchases",search:"Search planned items…"}
 };
 function updateRegisterSub(){
   if(state.view!=="register") return;
@@ -670,11 +780,13 @@ function setView(v){
   $("#viewRegister").hidden = v!=="register";
   $("#viewSpares").hidden = v!=="spares";
   $("#viewInvoices").hidden = v!=="invoices";
+  $("#viewProcurement").hidden = v!=="procurement";
   $("#viewTitle").textContent = m.title;
   $("#viewSub").textContent = m.sub;
   $$(".ctx-register").forEach(e=>e.hidden = v!=="register");
   $$(".ctx-spares").forEach(e=>e.hidden = v!=="spares");
   $$(".ctx-invoices").forEach(e=>e.hidden = v!=="invoices");
+  $$(".ctx-procurement").forEach(e=>e.hidden = v!=="procurement");
   $("#search").placeholder = m.search;
   document.body.classList.remove("nav-open");
   renderView();
@@ -920,7 +1032,7 @@ function openBackupModal(){
     '<button class="btn" id="b_import"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21V9M7 14l5-5 5 5"/><path d="M5 3h14"/></svg>Import</button><button class="btn btn-primary" id="b_export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Export</button>');
   store.allEntries().then(en=>{ $("#b_info").textContent="Mode: "+(store.live?"Live (Supabase)":"Sample (local)")+"\nAssets: "+activeAssets().length+"\nCheck records: "+en.length+"\nSpare lines: "+state.spares.length+"\nInvoices: "+state.invoices.length; }).catch(()=>{ $("#b_info").textContent="Assets: "+activeAssets().length; });
   $("#b_export").onclick=async()=>{ const entries=await store.allEntries();
-    download("MUR_register_backup_"+currentQuarter().replace("-","_")+".json",JSON.stringify({app:"mur-asset-register",version:5,exportedAt:new Date().toISOString(),live:store.live,assets:state.assets,entries,spares:state.spares,invoices:state.invoices},null,2),"application/json"); };
+    download("MUR_register_backup_"+currentQuarter().replace("-","_")+".json",JSON.stringify({app:"mur-asset-register",version:6,exportedAt:new Date().toISOString(),live:store.live,assets:state.assets,entries,spares:state.spares,invoices:state.invoices,procurement:state.procurement},null,2),"application/json"); };
   $("#b_import").onclick=()=>$("#fileImport").click();
 }
 async function onImportFile(ev){
@@ -932,7 +1044,8 @@ async function onImportFile(ev){
     if(Array.isArray(data.entries)) for(const r of data.entries) await store.putEntry(r.quarter,r.tag,{status:r.status,note:r.note,at:r.checked_at,by:r.checked_by,periph:{charger:!!r.charger,hub:!!r.hub,headset:!!r.headset,mouse:!!r.mouse}});
     if(Array.isArray(data.spares)) for(const sp of data.spares){ try{ await store.addSpare(sp); }catch(e){} }
     if(Array.isArray(data.invoices)) for(const iv of data.invoices){ try{ const c=Object.assign({},iv); delete c.id; await store.addInvoice(c); }catch(e){} }
-    state.assets=await store.allAssets(); state.spares=await store.allSpares(); state.invoices=await store.allInvoices(); await loadEntries(); closeModal(); renderAll(); toast("Restored "+data.assets.length+" assets");
+    if(Array.isArray(data.procurement)) for(const pp of data.procurement){ try{ const c=Object.assign({},pp); delete c.id; await store.addPurchase(c); }catch(e){} }
+    state.assets=await store.allAssets(); state.spares=await store.allSpares(); state.invoices=await store.allInvoices(); state.procurement=await store.allProcurement(); await loadEntries(); closeModal(); renderAll(); toast("Restored "+data.assets.length+" assets");
   }catch(e){ toast("Import failed: "+e.message,true); }
 }
 
@@ -955,6 +1068,7 @@ async function useStore(next){
   try{ state.assets=await store.allAssets(); }catch(e){ state.assets=[]; toast("Load failed: "+e.message,true); }
   try{ state.spares=await store.allSpares(); }catch(e){ state.spares=[]; }
   try{ state.invoices=await store.allInvoices(); }catch(e){ state.invoices=[]; }
+  try{ state.procurement=await store.allProcurement(); }catch(e){ state.procurement=[]; }
   await loadEntries(); state.loading=false; renderAuth(); renderAll();
 }
 async function onSignedIn(session){ state.user=session.user; if(!state.auditor){ state.auditor=(session.user.user_metadata&&session.user.user_metadata.name)||session.user.email||""; } await useStore(supaStore); toast("Signed in — live data loaded"); subscribeRealtime(); }
@@ -966,6 +1080,7 @@ function subscribeRealtime(){ if(!sb || rtChannel) return;
       .on("postgres_changes",{event:"*",schema:"public",table:"audit_entries"},async()=>{ await loadEntries(); renderAll(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"spares"},async()=>{ state.spares=await store.allSpares(); renderAll(); })
       .on("postgres_changes",{event:"*",schema:"public",table:"invoices"},async()=>{ state.invoices=await store.allInvoices(); renderAll(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"procurement"},async()=>{ state.procurement=await store.allProcurement(); renderAll(); })
       .subscribe(); }catch(e){}
 }
 
@@ -992,9 +1107,11 @@ async function init(){
     else if(b.dataset.act==="mon-dec") monAdjust(b.dataset.bucket,-1);
   });
   $("#invoices").addEventListener("click",onInvoicesClick);
+  $("#procurement").addEventListener("click",onProcurementClick);
   $("#navRegister").addEventListener("click",()=>setView("register"));
   $("#navSpares").addEventListener("click",()=>setView("spares"));
   $("#navInvoices").addEventListener("click",()=>setView("invoices"));
+  $("#navProcurement").addEventListener("click",()=>setView("procurement"));
   $("#navToggle").addEventListener("click",()=>document.body.classList.toggle("nav-open"));
   $("#search").addEventListener("input",e=>{ state.q=e.target.value; renderView(); });
   $("#filterType").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.filter=b.dataset.f; $$("#filterType button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderStats(); renderRegister(); updateRegisterSub(); });
@@ -1006,6 +1123,8 @@ async function init(){
   $("#btnAddSpare").addEventListener("click",()=>openSpareModal(null));
   $("#btnStockAlert").addEventListener("click",sendStockDigestNow);
   $("#btnAddInvoice").addEventListener("click",()=>openInvoiceModal(null));
+  $("#btnAddPurchase").addEventListener("click",()=>openPurchaseModal(null));
+  $("#btnKit").addEventListener("click",addNewHireKit);
   $("#btnBackup").addEventListener("click",openBackupModal);
   $("#fileImport").addEventListener("change",onImportFile);
   $("#authBtn").addEventListener("click",async()=>{ if(store.live){ await sb.auth.signOut(); } else { openAuthModal(); } });
