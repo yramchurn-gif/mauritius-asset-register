@@ -82,8 +82,11 @@ Deno.serve(async (req) => {
     const sb = createClient(supabaseUrl, serviceKey);
     const { data, error } = await sb.from("spares").select("item,category,qty,min_qty");
     if (error) return json({ error: error.message }, 500);
-    // min_qty of 0 means "no threshold" — never treated as low.
-    low = (data || []).filter((s) => Number(s.min_qty) > 0 && Number(s.qty) <= Number(s.min_qty));
+    // Monitor stock treats min_qty 0 as "no threshold"; other categories use qty <= min_qty.
+    low = (data || []).filter((s) =>
+      String(s.category) === "monitor"
+        ? Number(s.min_qty) > 0 && Number(s.qty) <= Number(s.min_qty)
+        : Number(s.qty) <= Number(s.min_qty));
   }
 
   if (!low.length) return json({ ok: true, sent: false, reason: "nothing low" });

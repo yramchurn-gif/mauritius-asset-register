@@ -57,8 +57,8 @@ create or replace function public.spares_low_stock_trigger()
 returns trigger language plpgsql security definer set search_path = public, extensions as $$
 declare crossed boolean;
 begin
-  -- min_qty of 0 means "no threshold" (never alert); rearm once restocked above it.
-  if NEW.min_qty <= 0 or NEW.qty > NEW.min_qty then
+  -- Monitor stock treats min_qty 0 as "no threshold"; rearm once restocked above min.
+  if (NEW.category = 'monitor' and NEW.min_qty <= 0) or NEW.qty > NEW.min_qty then
     NEW.low_alert_sent := false;
     return NEW;
   end if;
