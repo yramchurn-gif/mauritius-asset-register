@@ -50,7 +50,9 @@ const SAMPLE = [
   ["MUR0041","Devan R.","","phone","android","Samsung S24 Ultra","256GB · 2024","256GB","Galaxy S24U","SN-SAMPLE-S24"],
   ["MUR0042","Support","","phone","apple","iPhone 14","On-call handset","128GB","iPhone 14","SN-SAMPLE-IP14"],
   ["MUR0050","Nisha B.","","tablet","apple","iPad Air","Field sign-off","64GB","iPad Air","SN-SAMPLE-IPAD"],
-  ["MUR0060","Meeting Room","","monitor","other","Dell 27\" Monitor","Conference display","27\" · 4K","—","SN-SAMPLE-MON"],
+  ["MUR0060","Meeting Room","","monitor","other","Dell 27\" Monitor","Conference display","Office · 27\" 4K","—","SN-SAMPLE-MON"],
+  ["MUR0061","Ryan T.","","monitor","other","Dell 24\" Monitor","Home setup","Home · 24\"","—","SN-SAMPLE-MON2"],
+  ["MUR0062","Sara L.","","monitor","other","LG 27\" Monitor","Home setup","Home · 27\"","—","SN-SAMPLE-MON3"],
   ["MUR0070","Support","","peripheral","other","Jabra Headset","Support-desk headset","Wired","—","SN-SAMPLE-JAB"],
   ["MUR0090","Office","","infra","ups","APC UPS","Rack UPS","Backup power","—","SN-SAMPLE-UPS"],
   ["MUR0091","Office","","infra","net","Access Point","Wireless AP","Network","—","SN-SAMPLE-AP"],
@@ -333,7 +335,44 @@ function spareHTML(s){
     '</div>'+
   '</div>';
 }
+/* ---- monitors overview: deployed monitors broken down by condition/location ---
+   Reads monitor assets from the register (type="monitor"). Location comes from
+   the asset's Spec field ("Office"/"Home"/room) or a home-like assignee; broken
+   = a current-quarter audit status of damaged/missing/replace. Spare (available)
+   monitors come from the Spares stock lines in the "monitor" category. */
+function monLocation(a){ const s=((a.spec||"")+" "+(a.assignee||"")).toLowerCase(); return /home|remote|wfh/.test(s)?"home":"office"; }
+function monIsBroken(a){ const st=entry(a.tag).status; return st==="damaged"||st==="missing"||st==="replace"; }
+function monIsPerson(a){ const w=(a.assignee||"").trim().toLowerCase(); return !!w && !/office|meeting|room|store|spare|stock|unassigned|reception|boardroom/.test(w); }
+function computeMonitors(){
+  const mons=activeAssets().filter(a=>a.type==="monitor");
+  const broken=mons.filter(monIsBroken);
+  const working=mons.filter(a=>!monIsBroken(a));
+  const home=working.filter(a=>monLocation(a)==="home");
+  const office=working.filter(a=>monLocation(a)==="office");
+  const homeList=home.map(a=>({who:monIsPerson(a)?a.assignee:(a.assignee||"—"),tag:a.tag}));
+  const spareQty=state.spares.filter(s=>s.category==="monitor").reduce((m,s)=>m+(s.qty||0),0);
+  return {total:mons.length, inUse:working.length, broken:broken.length, office:office.length, home:home.length, homeList, spareQty};
+}
+function renderMonitors(){
+  const el=$("#monSummary"); if(!el) return;
+  const m=computeMonitors();
+  if(!m.total && !m.spareQty){ el.hidden=true; el.innerHTML=""; return; }
+  el.hidden=false;
+  const tile=(k,v,cls)=>'<div class="mon-tile'+(cls?" "+cls:"")+'"><span class="mon-v">'+v+'</span><span class="mon-k">'+k+'</span></div>';
+  const homeNames = m.homeList.length
+    ? '<div class="mon-home"><span class="mon-home-k">At home with</span> '+m.homeList.map(h=>'<span class="mon-chip">'+esc(h.who)+' <em>'+esc(h.tag)+'</em></span>').join("")+'</div>'
+    : "";
+  el.innerHTML='<div class="mon-title">Monitors <span class="mon-count">'+m.total+' deployed'+(m.spareQty?' · '+m.spareQty+' spare':'')+'</span></div>'+
+    '<div class="mon-tiles">'+
+      tile("In use",m.inUse)+
+      tile("At office",m.office)+
+      tile("At home",m.home)+
+      tile("Broken",m.broken,m.broken?"is-bad":"")+
+      tile("Spare in stock",m.spareQty)+
+    '</div>'+homeNames;
+}
 function renderSpares(){
+  renderMonitors();
   const host=$("#spares");
   if(state.loading){ host.innerHTML=Array(4).fill('<div class="skeleton"></div>').join(""); return; }
   const list=state.spares.filter(sparePass).sort((a,b)=>(a.category+a.item).localeCompare(b.category+b.item));
