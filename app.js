@@ -98,6 +98,7 @@ const localStore = {
   async allAssets(){ return lsInit().assets.slice(); },
   async putAsset(a){ const o=lsInit(); const i=o.assets.findIndex(x=>x.tag===a.tag); if(i>=0)o.assets[i]=a; else o.assets.push(a); lsWrite(o); },
   async delAsset(tag){ const o=lsInit(); o.assets=o.assets.filter(x=>x.tag!==tag); lsWrite(o); },
+  async getHistory(){ return []; },
   async getEntries(q){ const o=lsInit(); const src=o.entries[q]||{}; const m={}; for(const t in src){ const e=src[t]; m[t]={status:e.status,note:e.note,at:e.at,by:e.by,periph:Object.assign(blankPeriph(),e.periph)}; } return m; },
   async putEntry(q,tag,e){ const o=lsInit(); o.entries[q]=o.entries[q]||{}; o.entries[q][tag]=e; lsWrite(o); },
   async allEntries(){ const o=lsInit(); const out=[]; for(const q in o.entries) for(const tag in o.entries[q]){ const e=o.entries[q][tag]; out.push({quarter:q,tag,status:e.status,note:e.note,checked_at:e.at,checked_by:e.by,charger:e.periph.charger,hub:e.periph.hub,headset:e.periph.headset,mouse:e.periph.mouse}); } return out; },
@@ -118,6 +119,7 @@ const supaStore = {
   async allAssets(){ const {data,error}=await sb.from("assets").select("*").order("tag"); if(error)throw error; return (data||[]).map(fromDb); },
   async putAsset(a){ const {error}=await sb.from("assets").upsert(toDb(a),{onConflict:"tag"}); if(error)throw error; },
   async delAsset(tag){ const {error}=await sb.from("assets").delete().eq("tag",tag); if(error)throw error; },
+  async getHistory(tag){ const {data,error}=await sb.from("asset_history").select("*").eq("tag",tag).order("changed_at",{ascending:false}).limit(20); if(error)throw error; return data||[]; },
   async getEntries(q){ const {data,error}=await sb.from("audit_entries").select("*").eq("quarter",q); if(error)throw error; const m={}; (data||[]).forEach(r=>{ m[r.tag]=entryFromDb(r); }); return m; },
   async putEntry(q,tag,e){ const {error}=await sb.from("audit_entries").upsert({quarter:q,tag,status:e.status,note:e.note,checked_at:e.at,checked_by:e.by,charger:e.periph.charger,hub:e.periph.hub,headset:e.periph.headset,mouse:e.periph.mouse},{onConflict:"quarter,tag"}); if(error)throw error; },
   async allEntries(){ const {data,error}=await sb.from("audit_entries").select("*"); if(error)throw error; return data||[]; },
@@ -138,7 +140,7 @@ let store = localStore;
 /* --------------------------------- app state ------------------------------- */
 const state = {
   view:"register", assets:[], entries:{}, spares:[], invoices:[], quarter:currentQuarter(),
-  filter:"all", group:"type", q:"", auditMode:false, loading:true,
+  filter:"all", group:"type", q:"", spareSort:"qty", auditMode:false, loading:true,
   user:null, auditor:"", gerardEmail:CFG.REPORT_TO||"gcateau@bspot.com",
   stockAlertTo:(CFG.STOCK_ALERT_TO&&CFG.STOCK_ALERT_TO.length)?CFG.STOCK_ALERT_TO:["yramchurn@bspot.com","rsoodarchand@bspot.com"]
 };
@@ -496,7 +498,10 @@ function renderSpares(){
   renderMonitors();
   const host=$("#spares");
   if(state.loading){ host.innerHTML=Array(4).fill('<div class="skeleton"></div>').join(""); return; }
-  const list=state.spares.filter(sparePass).sort((a,b)=>(a.category+a.item).localeCompare(b.category+b.item));
+  const list=state.spares.filter(sparePass).sort(
+    state.spareSort==="qty"
+      ? (a,b)=>(a.qty-b.qty) || (a.category+a.item).localeCompare(b.category+b.item)   // fewest first
+      : (a,b)=>(a.category+a.item).localeCompare(b.category+b.item));
   const totalQty=state.spares.reduce((m,s)=>m+(s.qty||0),0);
   const lowCount=state.spares.filter(isLow).length;
   $("#sparesTotal").textContent=totalQty; $("#sparesLow").textContent=lowCount;
@@ -728,7 +733,7 @@ async function sendStockDigestNow(){
   const low=state.spares.filter(isLow);
   if(!low.length){ toast("Nothing is low right now"); return; }
   const btn=$("#btnStockAlert"); if(btn) btn.disabled=true;
-  try{ const r=await invokeStockAlert({reason:"digest"}); toast(r&&r.sent?("Low-stock alert emailed to "+state.stockAlertTo.join(" & ")):"Alert function reached, nothing to send"); }
+  try{ const r=await invokeStockAlert({reason:"digest"}); const ch=r&&r.sent&&typeof r.sent==="object"?Object.keys(r.sent).join(" + "):null; toast(ch?("Low-stock alert sent ("+ch+")"):"Alert function reached, nothing to send"); }
   catch(e){ toast("Couldn't send alert: "+e.message+" — is the Edge Function deployed?",true); }
   finally{ if(btn) btn.disabled=false; }
 }
@@ -778,10 +783,21 @@ function openAssetModal(a){
     '<div class="field"><label>Assignee / location</label><input id="f_assignee" value="'+esc(a.assignee)+'"></div>'+
     '<div class="field"><label>Reassigned from (optional)</label><input id="f_reassigned" value="'+esc(a.reassignedFrom)+'"></div>'+
     '<div class="field-row"><div class="field"><label>Model</label><input id="f_model" value="'+esc(a.model)+'"></div><div class="field"><label>Variant</label><input id="f_variant" value="'+esc(a.variant)+'"></div></div>'+
-    '<div class="field-row"><div class="field"><label>Spec</label><input id="f_spec" value="'+esc(a.spec)+'"></div><div class="field"><label>Chip</label><input id="f_chip" value="'+esc(a.chip)+'"></div></div>',
-    (isNew?"":'<button class="btn" id="mDelete" style="margin-right:auto;color:var(--flag);border-color:var(--flag-line)">Remove</button>')+'<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">'+(isNew?"Add asset":"Save")+'</button>');
+    '<div class="field-row"><div class="field"><label>Spec</label><input id="f_spec" value="'+esc(a.spec)+'"></div><div class="field"><label>Chip</label><input id="f_chip" value="'+esc(a.chip)+'"></div></div>'+
+    (isNew?"":'<div class="field"><label>History</label><div class="report-preview" id="f_history">Loading…</div></div>'),
+    (isNew?"":'<button class="btn" id="mDelete" style="margin-right:auto;color:var(--flag);border-color:var(--flag-line)">Remove</button><button class="btn" id="mOffboard" title="Collect the device (mark returned to IT)">Offboard</button>')+'<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">'+(isNew?"Add asset":"Save")+'</button>');
   $("#mCancel").onclick=closeModal;
-  if(!isNew) $("#mDelete").onclick=async()=>{ if(confirm("Remove "+a.tag+" from the register?")){ try{ await store.delAsset(a.tag); state.assets=state.assets.filter(x=>x.tag!==a.tag); closeModal(); renderAll(); toast(a.tag+" removed"); }catch(e){ toast(e.message,true); } } };
+  if(!isNew){
+    // recent history (chain of custody)
+    store.getHistory(a.tag).then(rows=>{ const el=$("#f_history"); if(!el)return;
+      el.textContent = rows.length ? rows.map(r=>{ const d=r.changed_at?new Date(r.changed_at).toLocaleString("en-GB",{day:"2-digit",month:"short",year:"2-digit",hour:"2-digit",minute:"2-digit"}):""; return d+"  "+r.action.toUpperCase()+(r.summary?" · "+r.summary:"")+(r.changed_by&&r.changed_by!=="system"?"  ("+r.changed_by+")":""); }).join("\n") : "No history recorded yet."; })
+      .catch(()=>{ const el=$("#f_history"); if(el) el.textContent="History unavailable."; });
+    // offboard = collect on exit (reassign to IT store, logged automatically)
+    $("#mOffboard").onclick=async()=>{ if(!confirm("Offboard "+a.tag+"? It will be marked returned to IT (was "+(a.assignee||"unassigned")+")."))return;
+      const obj=Object.assign({},a,{reassignedFrom:a.assignee||"",assignee:"Returned to IT"});
+      try{ await store.putAsset(obj); const i=state.assets.findIndex(x=>x.tag===a.tag); if(i>=0)state.assets[i]=obj; closeModal(); renderAll(); toast(a.tag+" offboarded — returned to IT"); }catch(e){ toast(e.message,true); } };
+    $("#mDelete").onclick=async()=>{ if(confirm("Remove "+a.tag+" from the register?")){ try{ await store.delAsset(a.tag); state.assets=state.assets.filter(x=>x.tag!==a.tag); closeModal(); renderAll(); toast(a.tag+" removed"); }catch(e){ toast(e.message,true); } } };
+  }
   $("#mSave").onclick=async()=>{
     const tag=$("#f_tag").value.trim().toUpperCase(); if(!tag){ toast("An asset tag is required",true); return; }
     if(isNew && state.assets.some(x=>x.tag===tag)){ toast("Tag "+tag+" already exists",true); return; }
@@ -968,6 +984,7 @@ async function init(){
   $("#register").addEventListener("click",onRegisterClick);
   $("#register").addEventListener("input",onRegisterInput);
   $("#spares").addEventListener("click",onSparesClick);
+  $("#spareSort").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.spareSort=b.dataset.s; $$("#spareSort button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderSpares(); });
   $("#monSummary").addEventListener("click",e=>{
     if(e.target.closest("#monManage")) return openMonitorsModal();
     const b=e.target.closest("button[data-act]"); if(!b) return;

@@ -56,7 +56,8 @@ Deno.serve(async (req) => {
   if (!authed) return json({ error: "unauthorized" }, 401);
 
   const resendKey = Deno.env.get("RESEND_API_KEY");
-  if (!resendKey) return json({ error: "RESEND_API_KEY is not set" }, 500);
+  const slackUrl = Deno.env.get("SLACK_WEBHOOK_URL");
+  if (!resendKey && !slackUrl) return json({ error: "no channel configured (set RESEND_API_KEY and/or SLACK_WEBHOOK_URL)" }, 500);
 
   const from = Deno.env.get("ALERT_FROM") || "Mauritius Asset Register <onboarding@resend.dev>";
   const recipients = (Deno.env.get("ALERT_RECIPIENTS") || DEFAULT_RECIPIENTS.join(","))
@@ -120,14 +121,30 @@ Deno.serve(async (req) => {
 
   const text = "Spare stock low:\n" + low.map((s) => `  ${s.item} — ${s.qty} in stock (min ${s.min_qty})`).join("\n");
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from, to: recipients, subject, html, text }),
-  });
+  const sent: Record<string, unknown> = {};
 
-  if (!res.ok) return json({ error: "resend failed", detail: await res.text() }, 502);
-  return json({ ok: true, sent: true, count: low.length, to: recipients });
+  // Slack (works with no verified email domain; posts to the configured channel)
+  if (slackUrl) {
+    const slackText = `:warning: *Spare stock low* — Mauritius (Ebène)\n` +
+      low.map((s) => `• ${s.item} — *${s.qty}* in stock (min ${s.min_qty})`).join("\n");
+    const sres = await fetch(slackUrl, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: slackText }),
+    });
+    sent.slack = sres.ok ? "ok" : `failed:${sres.status}`;
+  }
+
+  // Email (Resend)
+  if (resendKey) {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to: recipients, subject, html, text }),
+    });
+    sent.email = res.ok ? recipients : `failed:${await res.text()}`;
+  }
+
+  return json({ ok: true, sent, count: low.length });
 });
 
 function escapeHtml(s: string): string {

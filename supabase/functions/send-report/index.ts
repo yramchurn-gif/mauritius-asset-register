@@ -39,7 +39,8 @@ Deno.serve(async (req) => {
   if (!authed) return json({ error: "unauthorized" }, 401);
 
   const resendKey = Deno.env.get("RESEND_API_KEY");
-  if (!resendKey) return json({ error: "RESEND_API_KEY is not set" }, 500);
+  const slackUrl = Deno.env.get("SLACK_WEBHOOK_URL");
+  if (!resendKey && !slackUrl) return json({ error: "no channel configured (set RESEND_API_KEY and/or SLACK_WEBHOOK_URL)" }, 500);
   const from = Deno.env.get("ALERT_FROM") || "Mauritius Asset Register <onboarding@resend.dev>";
 
   let p: Record<string, unknown> = {};
@@ -59,11 +60,26 @@ Deno.serve(async (req) => {
     payload.attachments = [{ filename: String(p.csv_name || "register.csv"), content: p.csv_base64 }];
   }
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) return json({ error: "resend failed", detail: await res.text() }, 502);
-  return json({ ok: true, sent: true, to });
+  const sent: Record<string, unknown> = {};
+
+  // Slack — post the report text (attachments aren't supported via webhook).
+  if (slackUrl) {
+    const sres = await fetch(slackUrl, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: `:bar_chart: *${subject}*\n\`\`\`${text.slice(0, 3500)}\`\`\`\n_Full CSV is attached to the emailed copy._` }),
+    });
+    sent.slack = sres.ok ? "ok" : `failed:${sres.status}`;
+  }
+
+  // Email (Resend) with the CSV attached.
+  if (resendKey) {
+    const res = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    sent.email = res.ok ? to : `failed:${await res.text()}`;
+  }
+
+  return json({ ok: true, sent });
 });
