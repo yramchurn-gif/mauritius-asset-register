@@ -56,8 +56,8 @@ Deno.serve(async (req) => {
   if (!authed) return json({ error: "unauthorized" }, 401);
 
   const resendKey = Deno.env.get("RESEND_API_KEY");
-  const slackUrl = Deno.env.get("SLACK_WEBHOOK_URL");
-  if (!resendKey && !slackUrl) return json({ error: "no channel configured (set RESEND_API_KEY and/or SLACK_WEBHOOK_URL)" }, 500);
+  const slackOn = slackConfigured();
+  if (!resendKey && !slackOn) return json({ error: "no channel configured (set RESEND_API_KEY and/or SLACK_BOT_TOKEN+SLACK_CHANNEL_ID or SLACK_WEBHOOK_URL)" }, 500);
 
   const from = Deno.env.get("ALERT_FROM") || "Mauritius Asset Register <onboarding@resend.dev>";
   const recipients = (Deno.env.get("ALERT_RECIPIENTS") || DEFAULT_RECIPIENTS.join(","))
@@ -124,14 +124,10 @@ Deno.serve(async (req) => {
   const sent: Record<string, unknown> = {};
 
   // Slack (works with no verified email domain; posts to the configured channel)
-  if (slackUrl) {
+  if (slackOn) {
     const slackText = `:warning: *Spare stock low* — Mauritius (Ebène)\n` +
       low.map((s) => `• ${s.item} — *${s.qty}* in stock (min ${s.min_qty})`).join("\n");
-    const sres = await fetch(slackUrl, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: slackText }),
-    });
-    sent.slack = sres.ok ? "ok" : `failed:${sres.status}`;
+    sent.slack = await postSlack(slackText);
   }
 
   // Email (Resend)
@@ -149,4 +145,27 @@ Deno.serve(async (req) => {
 
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]!));
+}
+
+// Slack via bot token + channel id (chat.postMessage) or an incoming webhook URL.
+function slackConfigured(): boolean {
+  return !!(Deno.env.get("SLACK_BOT_TOKEN") && Deno.env.get("SLACK_CHANNEL_ID")) || !!Deno.env.get("SLACK_WEBHOOK_URL");
+}
+async function postSlack(text: string): Promise<string> {
+  const token = Deno.env.get("SLACK_BOT_TOKEN"), channel = Deno.env.get("SLACK_CHANNEL_ID");
+  if (token && channel) {
+    const r = await fetch("https://slack.com/api/chat.postMessage", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json; charset=utf-8" },
+      body: JSON.stringify({ channel, text }),
+    });
+    const j = await r.json().catch(() => ({}));
+    return r.ok && j.ok ? "ok" : `failed:${j.error || r.status}`;
+  }
+  const url = Deno.env.get("SLACK_WEBHOOK_URL");
+  if (url) {
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    return r.ok ? "ok" : `failed:${r.status}`;
+  }
+  return "skipped";
 }
