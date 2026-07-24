@@ -33,7 +33,8 @@ const TYPES = {
   infra:      {label:"Infrastructure", group:"Office infrastructure"},
   other:      {label:"Other device",   group:"Other devices"}
 };
-const TYPE_ORDER = ["laptop","phone","tablet","monitor","peripheral","infra","other"];
+// Monitors are intentionally omitted — they live in the Spares Monitors panel, not the Register.
+const TYPE_ORDER = ["laptop","phone","tablet","peripheral","infra","other"];
 const KINDS = {apple:"Apple",windows:"Windows",android:"Android",ups:"UPS",net:"Network",other:"Other"};
 
 /* ------- anonymized SAMPLE data (safe for public repo / logged-out) -------- */
@@ -225,8 +226,10 @@ function statusChip(st){ const m=ST[st]||ST.pending; return '<span class="status
 
 /* --------------------------------- stats ----------------------------------- */
 function activeAssets(){ return state.assets.filter(a=>!a.retired); }
+// The Register excludes monitors — they are tracked in the Spares Monitors panel.
+function registerAssets(){ return activeAssets().filter(a=>a.type!=="monitor"); }
 function computeStats(){
-  const act=activeAssets();
+  const act=registerAssets();
   const byType={}; TYPE_ORDER.forEach(t=>byType[t]=0);
   act.forEach(a=>{ byType[a.type]=(byType[a.type]||0)+1; });
   const laptops=act.filter(a=>a.type==="laptop"), infra=act.filter(a=>a.type==="infra");
@@ -254,7 +257,7 @@ function renderStats(){
     const cc={M2:"var(--accent)",M3:"var(--ok)",M4:"var(--info)",PC:"var(--warn)"}; const tot=s.laptops||1;
     ["M2","M3","M4","PC"].forEach(c=>{ if(s.chips[c]){ const i=document.createElement("i"); i.style.background=cc[c]; i.style.width=Math.max(6,(s.chips[c]/tot)*100)+"px"; i.title=c+": "+s.chips[c]; spark.appendChild(i); } });
   } else {
-    const kinds={}; activeAssets().filter(a=>a.type===focus).forEach(a=>{ kinds[a.kind]=(kinds[a.kind]||0)+1; });
+    const kinds={}; registerAssets().filter(a=>a.type===focus).forEach(a=>{ kinds[a.kind]=(kinds[a.kind]||0)+1; });
     const ks=Object.keys(kinds);
     $("#sLaptopsU").textContent = ks.map(k=>(KINDS[k]||k)+" · "+kinds[k]).join("   ")||"in service";
     const cc={apple:"var(--ink-2)",android:"var(--ok)",windows:"var(--info)",ups:"var(--warn)",net:"var(--info)",other:"var(--pend)"};
@@ -306,7 +309,7 @@ function passFilter(a){
 function renderRegister(){
   const host=$("#register");
   if(state.loading){ host.innerHTML='<div class="rows">'+Array(6).fill('<div class="skeleton"></div>').join("")+'</div>'; return; }
-  const list=activeAssets().filter(passFilter);
+  const list=registerAssets().filter(passFilter);
   if(!list.length){ host.innerHTML='<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><div>No assets match this view.</div></div>'; return; }
   const g=GROUPS[state.group]; const buckets={};
   list.forEach(a=>{ const k=g.of(a); (buckets[k]=buckets[k]||[]).push(a); });
@@ -772,7 +775,7 @@ function openSpareModal(s){
 /* --------------------------------- report ---------------------------------- */
 function periphMissing(a){ const e=entry(a.tag); return PERIPH.filter(p=>!e.periph[p[0]]).map(p=>p[1]); }
 function buildReport(){
-  const s=computeStats(); const act=activeAssets(); const by=st=>act.filter(a=>entry(a.tag).status===st);
+  const s=computeStats(); const act=registerAssets(); const by=st=>act.filter(a=>entry(a.tag).status===st);
   const damaged=by("damaged"), missing=by("missing"), replace=by("replace"), pending=by("pending");
   const reassigned=act.filter(a=>a.reassignedFrom);
   const gaps=act.filter(a=>a.type==="laptop"&&entry(a.tag).status!=="pending"&&periphMissing(a).length);
@@ -794,6 +797,14 @@ function buildReport(){
   if(gaps.length){ L.push("LAPTOPS MISSING ACCESSORIES ("+gaps.length+")"); gaps.forEach(a=>L.push("  "+a.tag+"  "+a.assignee+"  — missing: "+periphMissing(a).join(", "))); L.push(""); }
   if(reassigned.length){ L.push("REASSIGNMENTS TO CONFIRM ("+reassigned.length+")"); reassigned.forEach(a=>L.push("  "+a.tag+"  now "+a.assignee+"  (from "+a.reassignedFrom+")")); L.push(""); }
   if(pending.length){ L.push("NOT YET CHECKED ("+pending.length+")"); L.push("  "+pending.map(a=>a.tag).join(", ")); L.push(""); }
+  const mon=computeMonitors();
+  if(mon.total || mon.spareQty){
+    L.push("MONITORS ("+mon.total+" deployed"+(mon.spareQty?", "+mon.spareQty+" spare in stock":"")+")");
+    L.push("  In use .............. "+mon.inUse);
+    L.push("  At office ........... "+mon.office);
+    L.push("  At home ............. "+mon.home+(mon.homeList.length?"   ("+mon.homeList.map(h=>h.who+" ["+h.tag+"]").join(", ")+")":""));
+    L.push("  Broken / attention .. "+mon.broken);
+    L.push(""); }
   if(state.spares.length){ const low=state.spares.filter(isLow);
     L.push("SPARES & STOCK ("+state.spares.length+" lines"+(low.length?", "+low.length+" low":"")+")");
     state.spares.slice().sort((a,b)=>(a.category+a.item).localeCompare(b.category+b.item)).forEach(sp=>L.push("  "+String(sp.qty).padStart(2)+" ×  "+sp.item+(isLow(sp)?"   [LOW — min "+sp.min_qty+"]":""))); L.push(""); }
