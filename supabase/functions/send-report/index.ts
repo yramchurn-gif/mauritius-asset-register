@@ -62,9 +62,18 @@ Deno.serve(async (req) => {
 
   const sent: Record<string, unknown> = {};
 
-  // Slack — post the report text (attachments go with the emailed copy).
+  // Slack — interactive Block Kit card.
   if (slackOn) {
-    sent.slack = await postSlack(`:bar_chart: *${subject}*\n\`\`\`${text.slice(0, 3500)}\`\`\`\n_Full CSV is attached to the emailed copy._`);
+    const blocks = [
+      { type: "header", text: { type: "plain_text", text: "📊 Equipment-check report", emoji: true } },
+      { type: "section", text: { type: "mrkdwn", text: `*${subject}*` } },
+      { type: "section", text: { type: "mrkdwn", text: "```" + text.slice(0, 2800) + "```" } },
+      { type: "context", elements: [{ type: "mrkdwn", text: "Full line-by-line register (CSV) is attached to the emailed copy." }] },
+      { type: "actions", elements: [
+        { type: "button", text: { type: "plain_text", text: "Open register", emoji: true }, url: SITE_URL, style: "primary" },
+      ] },
+    ];
+    sent.slack = await postSlack(`${subject}`, blocks);
   }
 
   // Email (Resend) with the CSV attached.
@@ -84,21 +93,23 @@ Deno.serve(async (req) => {
 function slackConfigured(): boolean {
   return !!(Deno.env.get("SLACK_BOT_TOKEN") && Deno.env.get("SLACK_CHANNEL_ID")) || !!Deno.env.get("SLACK_WEBHOOK_URL");
 }
-async function postSlack(text: string): Promise<string> {
+// deno-lint-ignore no-explicit-any
+async function postSlack(text: string, blocks?: any[]): Promise<string> {
   const token = Deno.env.get("SLACK_BOT_TOKEN"), channel = Deno.env.get("SLACK_CHANNEL_ID");
   if (token && channel) {
     const r = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ channel, text }),
+      body: JSON.stringify({ channel, text, blocks }),
     });
     const j = await r.json().catch(() => ({}));
     return r.ok && j.ok ? "ok" : `failed:${j.error || r.status}`;
   }
   const url = Deno.env.get("SLACK_WEBHOOK_URL");
   if (url) {
-    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, blocks }) });
     return r.ok ? "ok" : `failed:${r.status}`;
   }
   return "skipped";
 }
+const SITE_URL = "https://yramchurn-gif.github.io/mauritius-asset-register";
