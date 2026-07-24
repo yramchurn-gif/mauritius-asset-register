@@ -187,3 +187,14 @@ create policy "auth full access - procurement" on public.procurement for all to 
 alter table public.procurement drop constraint if exists procurement_status_chk;
 alter table public.procurement add constraint procurement_status_chk check (status in ('planned','ordered','received'));
 do $$ begin begin execute 'alter publication supabase_realtime add table public.procurement'; exception when duplicate_object then null; end; end $$;
+
+-- ---- app settings (editable templates, e.g. the new-hire kit) --------------
+create table if not exists public.app_settings (
+  key        text primary key,
+  value      jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.app_settings enable row level security;
+drop policy if exists "auth full access - settings" on public.app_settings;
+create policy "auth full access - settings" on public.app_settings for all to authenticated using (true) with check (true);
+do $$ begin begin execute 'alter publication supabase_realtime add table public.app_settings'; exception when duplicate_object then null; end; end $$;

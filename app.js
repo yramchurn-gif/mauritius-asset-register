@@ -123,7 +123,9 @@ const localStore = {
   async allProcurement(){ return lsInit().procurement.slice(); },
   async addPurchase(p){ const o=lsInit(); const id=(o.procurement.reduce((m,x)=>Math.max(m,x.id),0)||0)+1; o.procurement.push(Object.assign({id},p)); lsWrite(o); return id; },
   async updatePurchase(id,patch){ const o=lsInit(); const i=o.procurement.findIndex(x=>x.id===id); if(i>=0){ o.procurement[i]=Object.assign(o.procurement[i],patch); lsWrite(o); } },
-  async delPurchase(id){ const o=lsInit(); o.procurement=o.procurement.filter(x=>x.id!==id); lsWrite(o); }
+  async delPurchase(id){ const o=lsInit(); o.procurement=o.procurement.filter(x=>x.id!==id); lsWrite(o); },
+  async getSetting(k){ try{ return JSON.parse(localStorage.getItem("mur_settings")||"{}")[k]; }catch(e){ return undefined; } },
+  async setSetting(k,v){ let m={}; try{ m=JSON.parse(localStorage.getItem("mur_settings")||"{}"); }catch(e){} m[k]=v; try{ localStorage.setItem("mur_settings",JSON.stringify(m)); }catch(e){} }
 };
 
 const supaStore = {
@@ -148,7 +150,9 @@ const supaStore = {
   async allProcurement(){ const {data,error}=await sb.from("procurement").select("*").order("status").order("needed_by",{ascending:true,nullsFirst:false}).order("id"); if(error)throw error; return (data||[]).map(procFromDb); },
   async addPurchase(p){ const {data,error}=await sb.from("procurement").insert(procToDb(p)).select("id").single(); if(error)throw error; return data&&data.id; },
   async updatePurchase(id,patch){ const db=Object.assign({},patch); if("needed_by" in db) db.needed_by=db.needed_by||null; delete db.id; const {error}=await sb.from("procurement").update(db).eq("id",id); if(error)throw error; },
-  async delPurchase(id){ const {error}=await sb.from("procurement").delete().eq("id",id); if(error)throw error; }
+  async delPurchase(id){ const {error}=await sb.from("procurement").delete().eq("id",id); if(error)throw error; },
+  async getSetting(k){ const {data,error}=await sb.from("app_settings").select("value").eq("key",k).maybeSingle(); if(error)throw error; return data?data.value:undefined; },
+  async setSetting(k,v){ const {error}=await sb.from("app_settings").upsert({key:k,value:v,updated_at:new Date().toISOString()},{onConflict:"key"}); if(error)throw error; }
 };
 
 let store = localStore;
@@ -157,7 +161,7 @@ let store = localStore;
 const state = {
   view:"register", assets:[], entries:{}, spares:[], invoices:[], procurement:[], quarter:currentQuarter(),
   filter:"all", group:"type", q:"", spareSort:"qty", auditMode:false, loading:true,
-  user:null, auditor:"", gerardEmail:CFG.REPORT_TO||"gcateau@bspot.com",
+  user:null, auditor:"", kit:null, gerardEmail:CFG.REPORT_TO||"gcateau@bspot.com",
   stockAlertTo:(CFG.STOCK_ALERT_TO&&CFG.STOCK_ALERT_TO.length)?CFG.STOCK_ALERT_TO:["yramchurn@bspot.com","rsoodarchand@bspot.com"]
 };
 function currentQuarter(d){ d=d||new Date(); return d.getFullYear()+"-Q"+(Math.floor(d.getMonth()/3)+1); }
@@ -733,7 +737,7 @@ async function onProcurementClick(ev){
     try{ await store.updatePurchase(id,{status:ns}); setSaved(ns==="received"?"Marked received":"Reopened"); }catch(e){ toast(e.message,true); }
   }
 }
-const NEWHIRE_KIT=[
+const DEFAULT_KIT=[
   {item:'Laptop (MacBook Air 13" M4)',category:'laptop',qty:1,unit_cost:45000},
   {item:'Work phone (iPhone)',category:'phone',qty:1,unit_cost:22500},
   {item:'Monitor',category:'monitor',qty:1,unit_cost:8000},
@@ -742,17 +746,38 @@ const NEWHIRE_KIT=[
   {item:'Headset',category:'accessory',qty:1,unit_cost:2500},
   {item:'Mouse',category:'accessory',qty:1,unit_cost:800}
 ];
+function currentKit(){ return (state.kit&&state.kit.length)?state.kit:DEFAULT_KIT; }
+function kitRowHTML(k){ k=k||{item:"",category:"other",qty:1,unit_cost:0};
+  return '<div class="kit-row">'+
+    '<input class="k-item" value="'+esc(k.item)+'" placeholder="Item">'+
+    '<input class="k-qty" type="number" min="0" step="1" value="'+(k.qty!=null?k.qty:1)+'" title="Qty">'+
+    '<input class="k-cost" type="number" min="0" step="0.01" value="'+(k.unit_cost!=null?k.unit_cost:0)+'" title="Est. unit cost">'+
+    '<button class="btn btn-ghost icon-btn k-del" type="button" title="Remove">'+XMARK+'</button>'+
+  '</div>';
+}
 function addNewHireKit(){
   if(!store.live){ toast("Sign in to plan purchases",true); openAuthModal(); return; }
   openModal("New-hire kit",
-    '<p class="hint">Adds the standard onboarding bundle as planned purchases. Edit costs/quantities after.</p><div class="field"><label>New hire name / reference</label><input id="k_name" placeholder="e.g. New hire — CRM"></div>'+
-    '<div class="report-preview">'+NEWHIRE_KIT.map(k=>"• "+k.item).join("\n")+'</div>',
-    '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Add '+NEWHIRE_KIT.length+' items</button>');
-  $("#k_name").focus(); $("#mCancel").onclick=closeModal;
+    '<p class="hint">Edit the standard onboarding bundle below, then add it for a new hire. Use <b>Save as default kit</b> to keep your changes for next time.</p>'+
+    '<div class="field"><label>New hire name / reference</label><input id="k_name" placeholder="e.g. New hire — CRM"></div>'+
+    '<div class="kit-head"><span>Item</span><span>Qty</span><span>Est. cost</span><span></span></div>'+
+    '<div id="kitList">'+currentKit().map(kitRowHTML).join("")+'</div>'+
+    '<button class="btn btn-sm" id="kitAdd" type="button" style="margin-top:8px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add line</button>',
+    '<button class="btn" id="kitSaveDefault" style="margin-right:auto">Save as default kit</button><button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Add to plan</button>');
+  const list=$("#kitList");
+  $("#kitAdd").onclick=()=>list.insertAdjacentHTML("beforeend",kitRowHTML(null));
+  list.addEventListener("click",e=>{ const d=e.target.closest(".k-del"); if(d) d.closest(".kit-row").remove(); });
+  $("#mCancel").onclick=closeModal; $("#k_name").focus();
+  const readKit=()=>$$("#kitList .kit-row").map(r=>({item:r.querySelector(".k-item").value.trim(), category:"other", qty:parseFloat(r.querySelector(".k-qty").value)||0, unit_cost:parseFloat(r.querySelector(".k-cost").value)||0})).filter(k=>k.item);
+  $("#kitSaveDefault").onclick=async()=>{
+    const kit=readKit(); if(!kit.length){ toast("Add at least one item",true); return; }
+    try{ await store.setSetting("newhire_kit",{items:kit}); state.kit=kit; toast("Default kit saved"); }catch(e){ toast(e.message,true); }
+  };
   $("#mSave").onclick=async()=>{
+    const kit=readKit(); if(!kit.length){ toast("Add at least one item",true); return; }
     const who=$("#k_name").value.trim()||"New hire"; $("#mSave").disabled=true;
-    try{ for(const k of NEWHIRE_KIT){ await store.addPurchase(Object.assign({for_who:who,currency:"Rs",needed_by:null,status:"planned",note:""},k)); }
-      state.procurement=await store.allProcurement(); closeModal(); renderAll(); toast("New-hire kit added for "+who); }
+    try{ for(const k of kit){ await store.addPurchase({item:k.item,category:k.category||"other",qty:k.qty,unit_cost:k.unit_cost,for_who:who,currency:"Rs",needed_by:null,status:"planned",note:""}); }
+      state.procurement=await store.allProcurement(); closeModal(); renderAll(); toast(kit.length+" items added for "+who); }
     catch(e){ toast(e.message,true); $("#mSave").disabled=false; }
   };
 }
@@ -1069,6 +1094,7 @@ async function useStore(next){
   try{ state.spares=await store.allSpares(); }catch(e){ state.spares=[]; }
   try{ state.invoices=await store.allInvoices(); }catch(e){ state.invoices=[]; }
   try{ state.procurement=await store.allProcurement(); }catch(e){ state.procurement=[]; }
+  try{ const k=await store.getSetting("newhire_kit"); state.kit=(k&&Array.isArray(k.items)&&k.items.length)?k.items:DEFAULT_KIT.map(x=>Object.assign({},x)); }catch(e){ state.kit=DEFAULT_KIT.map(x=>Object.assign({},x)); }
   await loadEntries(); state.loading=false; renderAuth(); renderAll();
 }
 async function onSignedIn(session){ state.user=session.user; if(!state.auditor){ state.auditor=(session.user.user_metadata&&session.user.user_metadata.name)||session.user.email||""; } await useStore(supaStore); toast("Signed in — live data loaded"); subscribeRealtime(); }
