@@ -371,13 +371,53 @@ async function openReceipt(v){
   if(v.receipt_url){ window.open(v.receipt_url,"_blank","noopener"); return; }
   toast("No receipt on file",true);
 }
+/* ------- Google Drive receipt upload (keeps receipts in Drive, not Supabase) ---
+   Uses Google Identity Services for an OAuth token (drive.file scope — the app
+   can only touch files it creates) and uploads straight to a Drive folder.
+   Configure CFG.GOOGLE_CLIENT_ID (+ optional CFG.DRIVE_RECEIPTS_FOLDER_ID). */
+let _driveTok=null,_driveExp=0,_tokenClient=null,_tokenWaiters=null;
+function driveConfigured(){ return !!CFG.GOOGLE_CLIENT_ID; }
+function getDriveToken(){
+  return new Promise((resolve,reject)=>{
+    if(_driveTok && Date.now() < _driveExp-60000) return resolve(_driveTok);
+    if(!(window.google && google.accounts && google.accounts.oauth2)) return reject(new Error("Google sign-in didn't load — check your connection"));
+    if(!_tokenClient){
+      _tokenClient=google.accounts.oauth2.initTokenClient({
+        client_id:CFG.GOOGLE_CLIENT_ID,
+        scope:"https://www.googleapis.com/auth/drive.file",
+        callback:(resp)=>{ const w=_tokenWaiters; _tokenWaiters=null;
+          if(resp && resp.error){ w&&w.reject(new Error(resp.error)); return; }
+          _driveTok=resp.access_token; _driveExp=Date.now()+((resp.expires_in||3600)*1000); w&&w.resolve(_driveTok); }
+      });
+    }
+    _tokenWaiters={resolve,reject};
+    _tokenClient.requestAccessToken({prompt: _driveTok?"":"consent"});
+  });
+}
+async function uploadToDrive(file){
+  const token=await getDriveToken();
+  const meta={name:file.name}; const folder=CFG.DRIVE_RECEIPTS_FOLDER_ID; if(folder) meta.parents=[folder];
+  const boundary="mur"+Date.now().toString(16);
+  const head="\r\n--"+boundary+"\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n"+JSON.stringify(meta)+
+             "\r\n--"+boundary+"\r\nContent-Type: "+(file.type||"application/pdf")+"\r\n\r\n";
+  const tail="\r\n--"+boundary+"--";
+  const body=new Blob([head,file,tail]);
+  const res=await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink,name",
+    {method:"POST",headers:{Authorization:"Bearer "+token,"Content-Type":"multipart/related; boundary="+boundary},body});
+  if(!res.ok) throw new Error("Drive upload failed ("+res.status+"): "+(await res.text()).slice(0,160));
+  return await res.json();   // { id, webViewLink, name }
+}
+
 function openInvoiceModal(v){
   if(!store.live){ toast("Sign in to record purchases",true); openAuthModal(); return; }
   const isNew=!v;
   v=v||{invoice_no:"",purchase_date:new Date().toISOString().slice(0,10),vendor:"",buyer:CFG.BUYER_DEFAULT||"",representative:state.auditor||"",item_description:"",category:"phone",quantity:1,unit_price:0,total_amount:0,currency:"Rs",payment_method:"JUICE",transaction_ref:"",receipt_path:"",receipt_url:"",note:""};
   const catOpts=INV_CATS.map(c=>'<option value="'+c+'"'+(v.category===c?" selected":"")+'>'+c.charAt(0).toUpperCase()+c.slice(1)+'</option>').join("");
   const payOpts=PAY_METHODS.map(p=>'<option value="'+p+'"'+(v.payment_method===p?" selected":"")+'>'+p+'</option>').join("");
-  const receiptState = v.receipt_path?('Stored file attached'):(v.receipt_url?'External link attached':'No receipt attached');
+  const receiptState = v.receipt_path?('Stored file attached'):(v.receipt_url?'Receipt attached (Google Drive / link)':'No receipt attached');
+  const uploadBtnHTML = driveConfigured()
+    ? '<button type="button" class="btn btn-sm" id="i_drive">'+RECEIPT_IC+'Upload to Google Drive</button>'
+    : '<button type="button" class="btn btn-sm" id="i_upload">'+RECEIPT_IC+'Upload file</button>';
   openModal(isNew?"Record purchase":"Edit invoice "+esc(v.invoice_no),
     '<div class="field-row"><div class="field"><label>Invoice no.</label><input id="i_no" value="'+esc(v.invoice_no)+'" placeholder="INV00001"></div><div class="field"><label>Purchase date</label><input id="i_date" type="date" value="'+esc(v.purchase_date||"")+'"></div></div>'+
     '<div class="field-row"><div class="field"><label>Vendor / seller</label><input id="i_vendor" value="'+esc(v.vendor)+'" placeholder="e.g. Icell Mauritius"></div><div class="field"><label>Buyer</label><input id="i_buyer" value="'+esc(v.buyer)+'"></div></div>'+
@@ -387,7 +427,7 @@ function openInvoiceModal(v){
     '<div class="field-row"><div class="field"><label>Quantity</label><input id="i_qty" type="number" min="0" step="1" value="'+(v.quantity)+'"></div><div class="field"><label>Unit price</label><input id="i_unit" type="number" min="0" step="0.01" value="'+(v.unit_price)+'"></div></div>'+
     '<div class="field-row"><div class="field"><label>Total amount</label><input id="i_total" type="number" min="0" step="0.01" value="'+(v.total_amount)+'"></div><div class="field"><label>Payment method</label><select id="i_pay">'+payOpts+'</select></div></div>'+
     '<div class="field"><label>Transaction reference</label><input id="i_ref" value="'+esc(v.transaction_ref)+'" placeholder="e.g. FT26XXXX / cheque no."></div>'+
-    '<div class="field"><label>Receipt</label><div class="receipt-box"><div class="receipt-state" id="i_rstate">'+receiptState+'</div><div class="receipt-btns"><button type="button" class="btn btn-sm" id="i_upload">'+RECEIPT_IC+'Upload file</button>'+(hasReceipt(v)?'<button type="button" class="btn btn-sm" id="i_view">Open</button>':'')+'</div></div><input id="i_link" value="'+esc(v.receipt_url)+'" placeholder="…or paste a Google Drive / external link" style="margin-top:8px"></div>'+
+    '<div class="field"><label>Receipt</label><div class="receipt-box"><div class="receipt-state" id="i_rstate">'+receiptState+'</div><div class="receipt-btns">'+uploadBtnHTML+(hasReceipt(v)?'<button type="button" class="btn btn-sm" id="i_view">Open</button>':'')+'</div></div><input id="i_link" value="'+esc(v.receipt_url)+'" placeholder="…or paste a Google Drive / external link" style="margin-top:8px"></div>'+
     '<div class="field"><label>Note (optional)</label><input id="i_note" value="'+esc(v.note)+'"></div>',
     (isNew?"":'<button class="btn" id="mDelete" style="margin-right:auto;color:var(--flag);border-color:var(--flag-line)">Remove</button>')+'<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">'+(isNew?"Save invoice":"Save")+'</button>');
   $("#i_no").focus();
@@ -397,7 +437,14 @@ function openInvoiceModal(v){
   // pending upload holder
   let pendingReceipt=v.receipt_path||"";
   const fileInput=$("#fileReceipt");
-  $("#i_upload").onclick=()=>{ fileInput.value=""; fileInput.onchange=async()=>{ const f=fileInput.files[0]; if(!f)return; if(f.size>15*1024*1024){ toast("Receipt too large (max 15MB)",true); return; }
+  // Google Drive upload (preferred — keeps receipts with the rest of the invoices in Drive)
+  if($("#i_drive")) $("#i_drive").onclick=()=>{ fileInput.value=""; fileInput.onchange=async()=>{ const f=fileInput.files[0]; if(!f)return; if(f.size>50*1024*1024){ toast("Receipt too large (max 50MB)",true); return; }
+    $("#i_drive").disabled=true; $("#i_rstate").textContent="Uploading "+f.name+" to Google Drive…";
+    try{ const r=await uploadToDrive(f); $("#i_link").value=r.webViewLink||""; pendingReceipt=""; $("#i_rstate").textContent="Uploaded to Drive: "+(r.name||f.name); toast("Receipt saved to Drive"); }
+    catch(e){ $("#i_rstate").textContent="Drive upload failed"; toast(e.message,true); } finally{ $("#i_drive").disabled=false; } };
+    fileInput.click(); };
+  // Supabase Storage upload (fallback when Drive isn't configured)
+  if($("#i_upload")) $("#i_upload").onclick=()=>{ fileInput.value=""; fileInput.onchange=async()=>{ const f=fileInput.files[0]; if(!f)return; if(f.size>15*1024*1024){ toast("Receipt too large (max 15MB)",true); return; }
     $("#i_upload").disabled=true; $("#i_rstate").textContent="Uploading "+f.name+"…";
     try{ pendingReceipt=await store.uploadReceipt(f); $("#i_rstate").textContent="Stored: "+f.name; toast("Receipt uploaded"); }
     catch(e){ $("#i_rstate").textContent="Upload failed"; toast(e.message,true); } finally{ $("#i_upload").disabled=false; } };

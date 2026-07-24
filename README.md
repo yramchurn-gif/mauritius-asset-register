@@ -50,9 +50,16 @@ GitHub Pages: _(URL appears here once Pages finishes building)_
 The **Invoicing** view logs every purchase — vendor, item, quantity, unit price,
 total, payment method (JUICE / bank transfer / cash / …) and transaction
 reference — modelled on the existing *Invoice Master Tracker*. Each row can carry
-a **receipt**: upload the PDF/image (stored in the private `receipts` bucket and
-opened through short-lived signed URLs) or paste an external Google Drive link.
-The `invoices` table and `receipts` bucket are created by `schema.sql`.
+a **receipt**. By default receipts upload **straight to Google Drive** (kept with
+the rest of the invoices, so Supabase storage stays lean): set `GOOGLE_CLIENT_ID`
+in `config.js` to an OAuth 2.0 Client ID (Google Cloud Console → APIs & Services →
+Credentials) with this site added as an *Authorised JavaScript origin*, and
+`DRIVE_RECEIPTS_FOLDER_ID` to the destination folder. Uploads use the narrow
+`drive.file` scope, so the app only ever touches files it creates. You can also
+paste an existing Drive/external link. If `GOOGLE_CLIENT_ID` is left blank,
+receipts upload into the private Supabase `receipts` bucket instead (served via
+short-lived signed URLs). The `invoices` table and `receipts` bucket are created
+by `schema.sql`.
 
 ## Low-stock email alerts
 
