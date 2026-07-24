@@ -362,7 +362,7 @@ function renderMonitors(){
   const m=computeMonitors();
   const tile=(k,v,cls)=>'<div class="mon-tile'+(cls?" "+cls:"")+'"><span class="mon-v">'+v+'</span><span class="mon-k">'+k+'</span></div>';
   const homeNames = m.homeList.length
-    ? '<div class="mon-home"><span class="mon-home-k">At home with</span> '+m.homeList.map(h=>'<span class="mon-chip">'+esc(h.who)+' <em>'+esc(h.tag)+'</em></span>').join("")+'</div>'
+    ? '<div class="mon-home"><span class="mon-home-k">At home with</span> '+m.homeList.map(h=>'<span class="mon-chip">'+esc(h.who)+'</span>').join("")+'</div>'
     : "";
   const btn='<button class="btn btn-sm" id="monManage" title="Add or update monitors">'+EDIT+'Update monitors</button>';
   const canDec=monGenericOffice().length>0;
@@ -802,7 +802,7 @@ function buildReport(){
     L.push("MONITORS ("+mon.total+" deployed"+(mon.spareQty?", "+mon.spareQty+" spare in stock":"")+")");
     L.push("  In use .............. "+mon.inUse);
     L.push("  At office ........... "+mon.office);
-    L.push("  At home ............. "+mon.home+(mon.homeList.length?"   ("+mon.homeList.map(h=>h.who+" ["+h.tag+"]").join(", ")+")":""));
+    L.push("  At home ............. "+mon.home+(mon.homeList.length?"   ("+mon.homeList.map(h=>h.who).join(", ")+")":""));
     L.push("  Broken / attention .. "+mon.broken);
     L.push(""); }
   if(state.spares.length){ const low=state.spares.filter(isLow);
