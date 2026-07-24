@@ -33,7 +33,8 @@ const TYPES = {
   infra:      {label:"Infrastructure", group:"Office infrastructure"},
   other:      {label:"Other device",   group:"Other devices"}
 };
-const TYPE_ORDER = ["laptop","phone","tablet","monitor","peripheral","infra","other"];
+// Monitors are intentionally omitted — they live in the Spares Monitors panel, not the Register.
+const TYPE_ORDER = ["laptop","phone","tablet","peripheral","infra","other"];
 const KINDS = {apple:"Apple",windows:"Windows",android:"Android",ups:"UPS",net:"Network",other:"Other"};
 
 /* ------- anonymized SAMPLE data (safe for public repo / logged-out) -------- */
@@ -225,8 +226,10 @@ function statusChip(st){ const m=ST[st]||ST.pending; return '<span class="status
 
 /* --------------------------------- stats ----------------------------------- */
 function activeAssets(){ return state.assets.filter(a=>!a.retired); }
+// The Register excludes monitors — they are tracked in the Spares Monitors panel.
+function registerAssets(){ return activeAssets().filter(a=>a.type!=="monitor"); }
 function computeStats(){
-  const act=activeAssets();
+  const act=registerAssets();
   const byType={}; TYPE_ORDER.forEach(t=>byType[t]=0);
   act.forEach(a=>{ byType[a.type]=(byType[a.type]||0)+1; });
   const laptops=act.filter(a=>a.type==="laptop"), infra=act.filter(a=>a.type==="infra");
@@ -254,7 +257,7 @@ function renderStats(){
     const cc={M2:"var(--accent)",M3:"var(--ok)",M4:"var(--info)",PC:"var(--warn)"}; const tot=s.laptops||1;
     ["M2","M3","M4","PC"].forEach(c=>{ if(s.chips[c]){ const i=document.createElement("i"); i.style.background=cc[c]; i.style.width=Math.max(6,(s.chips[c]/tot)*100)+"px"; i.title=c+": "+s.chips[c]; spark.appendChild(i); } });
   } else {
-    const kinds={}; activeAssets().filter(a=>a.type===focus).forEach(a=>{ kinds[a.kind]=(kinds[a.kind]||0)+1; });
+    const kinds={}; registerAssets().filter(a=>a.type===focus).forEach(a=>{ kinds[a.kind]=(kinds[a.kind]||0)+1; });
     const ks=Object.keys(kinds);
     $("#sLaptopsU").textContent = ks.map(k=>(KINDS[k]||k)+" · "+kinds[k]).join("   ")||"in service";
     const cc={apple:"var(--ink-2)",android:"var(--ok)",windows:"var(--info)",ups:"var(--warn)",net:"var(--info)",other:"var(--pend)"};
@@ -306,7 +309,7 @@ function passFilter(a){
 function renderRegister(){
   const host=$("#register");
   if(state.loading){ host.innerHTML='<div class="rows">'+Array(6).fill('<div class="skeleton"></div>').join("")+'</div>'; return; }
-  const list=activeAssets().filter(passFilter);
+  const list=registerAssets().filter(passFilter);
   if(!list.length){ host.innerHTML='<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><div>No assets match this view.</div></div>'; return; }
   const g=GROUPS[state.group]; const buckets={};
   list.forEach(a=>{ const k=g.of(a); (buckets[k]=buckets[k]||[]).push(a); });
@@ -362,10 +365,14 @@ function renderMonitors(){
     ? '<div class="mon-home"><span class="mon-home-k">At home with</span> '+m.homeList.map(h=>'<span class="mon-chip">'+esc(h.who)+' <em>'+esc(h.tag)+'</em></span>').join("")+'</div>'
     : "";
   const btn='<button class="btn btn-sm" id="monManage" title="Add or update monitors">'+EDIT+'Update monitors</button>';
+  const canDec=monGenericOffice().length>0;
+  const officeTile='<div class="mon-tile mon-tile-adj"><span class="mon-v">'+m.office+'</span><span class="mon-k">At office</span>'+
+    '<div class="mon-qty"><button class="qbtn" type="button" data-act="mon-office-dec" title="Remove an unnamed office monitor"'+(canDec?"":" disabled")+'>−</button>'+
+    '<button class="qbtn" type="button" data-act="mon-office-inc" title="Add an office monitor">+</button></div></div>';
   el.innerHTML='<div class="mon-title">Monitors <span class="mon-count">'+m.total+' deployed'+(m.spareQty?' · '+m.spareQty+' spare':'')+'</span>'+btn+'</div>'+
     '<div class="mon-tiles">'+
       tile("In use",m.inUse)+
-      tile("At office",m.office)+
+      officeTile+
       tile("At home",m.home)+
       tile("Broken",m.broken,m.broken?"is-bad":"")+
       tile("Spare in stock",m.spareQty)+
@@ -385,6 +392,24 @@ function monEditRow(a){
     '<select class="me-st"><option value="ok"'+(!broken?" selected":"")+'>In use</option><option value="broken"'+(broken?" selected":"")+'>Broken</option></select>'+
     '<button class="btn btn-ghost icon-btn me-del" type="button" title="Remove">'+XMARK+'</button>'+
   '</div>';
+}
+// Unnamed, shared office monitors (no person, no serial) — safe to add/remove by count.
+function monGenericOffice(){
+  return activeAssets().filter(a=>a.type==="monitor" && monLocation(a)==="office" && !(a.serial||"").trim() && ["office","","store","stock","spare"].includes((a.assignee||"").trim().toLowerCase()));
+}
+async function monOfficeAdd(){
+  if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
+  const obj={tag:nextMonTag(),assignee:"Office",reassignedFrom:"",type:"monitor",kind:"other",model:"Monitor",variant:"Office monitor",spec:"Office",chip:"—",serial:"",retired:false};
+  try{ await store.putAsset(obj); state.assets.push(obj); renderAll(); setSaved("Office monitor added ("+obj.tag+")"); }
+  catch(e){ toast(e.message,true); }
+}
+async function monOfficeRemove(){
+  if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
+  const cands=monGenericOffice().sort((a,b)=>b.tag.localeCompare(a.tag));
+  if(!cands.length){ toast("No unnamed office monitors to remove — use Update monitors for assigned ones",true); return; }
+  const a=cands[0];
+  try{ await store.delAsset(a.tag); state.assets=state.assets.filter(x=>x.tag!==a.tag); renderAll(); setSaved("Office monitor removed ("+a.tag+")"); }
+  catch(e){ toast(e.message,true); }
 }
 function openMonitorsModal(){
   if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
@@ -750,7 +775,7 @@ function openSpareModal(s){
 /* --------------------------------- report ---------------------------------- */
 function periphMissing(a){ const e=entry(a.tag); return PERIPH.filter(p=>!e.periph[p[0]]).map(p=>p[1]); }
 function buildReport(){
-  const s=computeStats(); const act=activeAssets(); const by=st=>act.filter(a=>entry(a.tag).status===st);
+  const s=computeStats(); const act=registerAssets(); const by=st=>act.filter(a=>entry(a.tag).status===st);
   const damaged=by("damaged"), missing=by("missing"), replace=by("replace"), pending=by("pending");
   const reassigned=act.filter(a=>a.reassignedFrom);
   const gaps=act.filter(a=>a.type==="laptop"&&entry(a.tag).status!=="pending"&&periphMissing(a).length);
@@ -772,6 +797,14 @@ function buildReport(){
   if(gaps.length){ L.push("LAPTOPS MISSING ACCESSORIES ("+gaps.length+")"); gaps.forEach(a=>L.push("  "+a.tag+"  "+a.assignee+"  — missing: "+periphMissing(a).join(", "))); L.push(""); }
   if(reassigned.length){ L.push("REASSIGNMENTS TO CONFIRM ("+reassigned.length+")"); reassigned.forEach(a=>L.push("  "+a.tag+"  now "+a.assignee+"  (from "+a.reassignedFrom+")")); L.push(""); }
   if(pending.length){ L.push("NOT YET CHECKED ("+pending.length+")"); L.push("  "+pending.map(a=>a.tag).join(", ")); L.push(""); }
+  const mon=computeMonitors();
+  if(mon.total || mon.spareQty){
+    L.push("MONITORS ("+mon.total+" deployed"+(mon.spareQty?", "+mon.spareQty+" spare in stock":"")+")");
+    L.push("  In use .............. "+mon.inUse);
+    L.push("  At office ........... "+mon.office);
+    L.push("  At home ............. "+mon.home+(mon.homeList.length?"   ("+mon.homeList.map(h=>h.who+" ["+h.tag+"]").join(", ")+")":""));
+    L.push("  Broken / attention .. "+mon.broken);
+    L.push(""); }
   if(state.spares.length){ const low=state.spares.filter(isLow);
     L.push("SPARES & STOCK ("+state.spares.length+" lines"+(low.length?", "+low.length+" low":"")+")");
     state.spares.slice().sort((a,b)=>(a.category+a.item).localeCompare(b.category+b.item)).forEach(sp=>L.push("  "+String(sp.qty).padStart(2)+" ×  "+sp.item+(isLow(sp)?"   [LOW — min "+sp.min_qty+"]":""))); L.push(""); }
@@ -895,7 +928,12 @@ async function init(){
   $("#register").addEventListener("click",onRegisterClick);
   $("#register").addEventListener("input",onRegisterInput);
   $("#spares").addEventListener("click",onSparesClick);
-  $("#monSummary").addEventListener("click",e=>{ if(e.target.closest("#monManage")) openMonitorsModal(); });
+  $("#monSummary").addEventListener("click",e=>{
+    if(e.target.closest("#monManage")) return openMonitorsModal();
+    const b=e.target.closest("button[data-act]"); if(!b) return;
+    if(b.dataset.act==="mon-office-inc") monOfficeAdd();
+    else if(b.dataset.act==="mon-office-dec") monOfficeRemove();
+  });
   $("#invoices").addEventListener("click",onInvoicesClick);
   $("#navRegister").addEventListener("click",()=>setView("register"));
   $("#navSpares").addEventListener("click",()=>setView("spares"));
