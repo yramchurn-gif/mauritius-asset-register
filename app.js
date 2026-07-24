@@ -64,7 +64,8 @@ const SAMPLE_SPARES = [
   {item:'USB-C hub',category:'hub',qty:3,min_qty:2,note:''},
   {item:'Headset',category:'headset',qty:4,min_qty:2,note:''},
   {item:'Mouse',category:'mouse',qty:5,min_qty:2,note:''},
-  {item:'Keyboard',category:'other',qty:2,min_qty:1,note:''}
+  {item:'Keyboard',category:'other',qty:2,min_qty:1,note:''},
+  {item:'HP W1360A Black Toner (LaserJet MFP M232-M237)',category:'toner',qty:2,min_qty:1,note:'Log the date on each cartridge change'}
 ];
 /* Anonymized sample purchases, shaped like the Invoice Master Tracker. */
 const SAMPLE_INVOICES = [
@@ -198,6 +199,8 @@ const SPIC={
   hub:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="9" width="18" height="6" rx="2"/><path d="M7 9V7M12 9V7M17 9V7"/></svg>',
   headset:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v-2a8 8 0 0 1 16 0v2"/><rect x="2" y="14" width="4" height="6" rx="1.5"/><rect x="18" y="14" width="4" height="6" rx="1.5"/></svg>',
   mouse:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="3" width="12" height="18" rx="6"/><path d="M12 7v4"/></svg>',
+  toner:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="8" width="18" height="8" rx="1.5"/><path d="M7 8V6.5h9V8"/><path d="M16.5 12H19"/></svg>',
+  printer:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9V3h12v6"/><rect x="4" y="9" width="16" height="8" rx="2"/><path d="M8 17h8v4H8z"/><path d="M17.5 12.5h.01"/></svg>',
   other:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8l-9-5-9 5 9 5 9-5z"/><path d="M3 8v8l9 5 9-5V8"/></svg>'
 };
 const CHECK='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5L20 6"/></svg>';
@@ -630,7 +633,7 @@ function openAssetModal(a){
 function openSpareModal(s){
   if(!store.live){ toast("Sign in to edit stock",true); openAuthModal(); return; }
   const isNew=!s; s=s||{item:"",category:"other",qty:0,min_qty:0,note:""};
-  const cats=["laptop","monitor","charger","hub","headset","mouse","other"];
+  const cats=["laptop","monitor","charger","hub","headset","mouse","toner","printer","cable","other"];
   openModal(isNew?"Add spare item":"Edit spare",
     '<div class="field"><label>Item</label><input id="s_item" value="'+esc(s.item)+'" placeholder="e.g. USB-C hub"></div>'+
     '<div class="field-row"><div class="field"><label>Category</label><select id="s_cat">'+cats.map(c=>'<option value="'+c+'"'+(s.category===c?" selected":"")+'>'+c.charAt(0).toUpperCase()+c.slice(1)+'</option>').join("")+'</select></div><div class="field"><label>In stock</label><input id="s_qty" type="number" min="0" value="'+s.qty+'"></div></div>'+
