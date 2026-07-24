@@ -116,3 +116,51 @@ create policy "auth read receipts"   on storage.objects for select to authentica
 create policy "auth write receipts"  on storage.objects for insert to authenticated with check (bucket_id = 'receipts');
 create policy "auth update receipts" on storage.objects for update to authenticated using (bucket_id = 'receipts');
 create policy "auth delete receipts" on storage.objects for delete to authenticated using (bucket_id = 'receipts');
+
+-- ---- data integrity constraints -------------------------------------------
+alter table public.assets drop constraint if exists assets_type_chk;
+alter table public.assets add constraint assets_type_chk check (type in ('laptop','phone','tablet','monitor','peripheral','infra','other'));
+alter table public.assets drop constraint if exists assets_kind_chk;
+alter table public.assets add constraint assets_kind_chk check (kind in ('apple','windows','android','ups','net','other'));
+alter table public.audit_entries drop constraint if exists audit_status_chk;
+alter table public.audit_entries add constraint audit_status_chk check (status in ('pending','present','damaged','missing','replace'));
+-- one invoice number can't be reused (blank allowed for un-numbered rows)
+create unique index if not exists invoices_no_uniq on public.invoices (invoice_no) where invoice_no <> '';
+
+-- ---- asset history (chain of custody) -------------------------------------
+create table if not exists public.asset_history (
+  id         bigint generated always as identity primary key,
+  tag        text not null,
+  action     text not null,            -- added | reassigned | retired | restored | updated | removed
+  summary    text not null default '',
+  changed_by text not null default '',
+  changed_at timestamptz not null default now()
+);
+alter table public.asset_history enable row level security;
+drop policy if exists "auth read history" on public.asset_history;
+create policy "auth read history" on public.asset_history for select to authenticated using (true);
+
+create or replace function public.log_asset_change() returns trigger language plpgsql security definer set search_path=public,auth as $$
+declare who text := coalesce(nullif(auth.email(),''),'system');
+begin
+  if tg_op='INSERT' then
+    insert into public.asset_history(tag,action,summary,changed_by) values (NEW.tag,'added',NEW.type||' '||coalesce(NEW.model,'')||' -> '||coalesce(nullif(NEW.assignee,''),'unassigned'),who); return NEW;
+  elsif tg_op='DELETE' then
+    insert into public.asset_history(tag,action,summary,changed_by) values (OLD.tag,'removed',OLD.type||' '||coalesce(OLD.model,''),who); return OLD;
+  else
+    if coalesce(OLD.assignee,'')<>coalesce(NEW.assignee,'') then
+      insert into public.asset_history(tag,action,summary,changed_by) values (NEW.tag,'reassigned','from '||coalesce(nullif(OLD.assignee,''),'unassigned')||' to '||coalesce(nullif(NEW.assignee,''),'unassigned'),who);
+    end if;
+    if coalesce(OLD.retired,false)<>coalesce(NEW.retired,false) then
+      insert into public.asset_history(tag,action,summary,changed_by) values (NEW.tag, case when NEW.retired then 'retired' else 'restored' end,'',who);
+    end if;
+    if OLD.assignee is not distinct from NEW.assignee and OLD.retired is not distinct from NEW.retired
+       and (OLD.model,OLD.spec,OLD.serial,OLD.variant,OLD.chip,OLD.kind,OLD.type) is distinct from (NEW.model,NEW.spec,NEW.serial,NEW.variant,NEW.chip,NEW.kind,NEW.type) then
+      insert into public.asset_history(tag,action,summary,changed_by) values (NEW.tag,'updated','details edited',who);
+    end if;
+    return NEW;
+  end if;
+end $$;
+drop trigger if exists assets_history_log on public.assets;
+create trigger assets_history_log after insert or update or delete on public.assets
+  for each row execute function public.log_asset_change();
