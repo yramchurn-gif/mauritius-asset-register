@@ -366,7 +366,7 @@ function renderMonitors(){
     : "";
   const btn='<button class="btn btn-sm" id="monManage" title="Add or update monitors">'+EDIT+'Update monitors</button>';
   const tile=(k,v,bucket,cls)=>{
-    const canDec = bucket==="spare" ? m.spareQty>0 : monBucketCands(bucket).length>0;
+    const canDec = bucket==="spare" ? m.spareQty>0 : monBucketAll(bucket).length>0;
     return '<div class="mon-tile mon-tile-adj'+(cls?" "+cls:"")+'"><span class="mon-v">'+v+'</span><span class="mon-k">'+k+'</span>'+
       '<div class="mon-qty"><button class="qbtn" type="button" data-act="mon-dec" data-bucket="'+bucket+'"'+(canDec?"":" disabled")+'>−</button>'+
       '<button class="qbtn" type="button" data-act="mon-inc" data-bucket="'+bucket+'">+</button></div></div>';
@@ -400,13 +400,23 @@ function monEditRow(a){
 function monGeneric(){
   return activeAssets().filter(a=>a.type==="monitor" && !(a.serial||"").trim() && ["office","home","","store","stock","spare"].includes((a.assignee||"").trim().toLowerCase()));
 }
-function monBucketCands(bucket){
-  const g=monGeneric();
-  if(bucket==="office") return g.filter(a=>!monIsBroken(a) && monLocation(a)==="office");
-  if(bucket==="home")   return g.filter(a=>!monIsBroken(a) && monLocation(a)==="home");
-  if(bucket==="broken") return g.filter(a=> monIsBroken(a));
-  if(bucket==="inuse")  return g.filter(a=>!monIsBroken(a));
+function monBucketFilter(list,bucket){
+  if(bucket==="office") return list.filter(a=>!monIsBroken(a) && monLocation(a)==="office");
+  if(bucket==="home")   return list.filter(a=>!monIsBroken(a) && monLocation(a)==="home");
+  if(bucket==="broken") return list.filter(a=> monIsBroken(a));
+  if(bucket==="inuse")  return list.filter(a=>!monIsBroken(a));
   return [];
+}
+// unnamed/shared units in a bucket (removed first)
+function monBucketCands(bucket){ return monBucketFilter(monGeneric(),bucket); }
+// every monitor in a bucket, named ones included (so a tile can be taken down to 0)
+function monBucketAll(bucket){ return monBucketFilter(activeAssets().filter(a=>a.type==="monitor"),bucket); }
+// pick which unit a "-" should act on: unnamed first, then named, newest tag first
+function monPickForRemoval(bucket){
+  const gen=monBucketCands(bucket).sort((a,b)=>b.tag.localeCompare(a.tag));
+  if(gen.length) return gen[0];
+  const all=monBucketAll(bucket).sort((a,b)=>b.tag.localeCompare(a.tag));
+  return all[0]||null;
 }
 function newMon(loc){ return {tag:nextMonTag(),assignee:(loc==="home"?"Home":"Office"),reassignedFrom:"",type:"monitor",kind:"other",model:"Monitor",variant:(loc==="home"?"Home monitor":"Office monitor"),spec:(loc==="home"?"Home":"Office"),chip:"—",serial:"",retired:false}; }
 async function monAdjust(bucket,delta){
@@ -426,18 +436,18 @@ async function monAdjust(bucket,delta){
         if(w.length){ await saveEntry(w[0].tag,{status:"damaged"}); renderAll(); setSaved("Flagged broken ("+w[0].tag+")"); return; }
         const obj=newMon("office"); await store.putAsset(obj); state.assets.push(obj); await saveEntry(obj.tag,{status:"damaged"}); renderAll(); setSaved("Broken monitor added ("+obj.tag+")"); return;
       }
-      const brk=monBucketCands("broken").sort((a,b)=>b.tag.localeCompare(a.tag));
-      if(!brk.length){ toast("No broken monitor to clear",true); return; }
-      await saveEntry(brk[0].tag,{status:"present"}); renderAll(); setSaved("Marked working ("+brk[0].tag+")"); return;
+      const brk=monPickForRemoval("broken");
+      if(!brk){ toast("No broken monitor to clear",true); return; }
+      await saveEntry(brk.tag,{status:"present"}); renderAll(); setSaved("Marked working ("+brk.tag+")"); return;
     }
-    // office / home / inuse: add or remove a shared unit.
+    // office / home / inuse: add or remove a unit (unnamed first, then named — so it can reach 0).
     if(delta>0){
       const obj=newMon(bucket==="home"?"home":"office");
       await store.putAsset(obj); state.assets.push(obj); renderAll(); setSaved("Monitor added ("+obj.tag+")");
     } else {
-      const cands=monBucketCands(bucket).sort((a,b)=>b.tag.localeCompare(a.tag));
-      if(!cands.length){ toast("No unnamed monitor to remove here — use Update monitors",true); return; }
-      const a=cands[0]; await store.delAsset(a.tag); state.assets=state.assets.filter(x=>x.tag!==a.tag); renderAll(); setSaved("Monitor removed ("+a.tag+")");
+      const a=monPickForRemoval(bucket);
+      if(!a){ toast("Nothing to remove here",true); return; }
+      await store.delAsset(a.tag); state.assets=state.assets.filter(x=>x.tag!==a.tag); renderAll(); setSaved("Monitor removed ("+a.tag+")");
     }
   }catch(e){ toast(e.message,true); }
 }
