@@ -355,21 +355,77 @@ function computeMonitors(){
 }
 function renderMonitors(){
   const el=$("#monSummary"); if(!el) return;
-  const m=computeMonitors();
-  if(!m.total && !m.spareQty){ el.hidden=true; el.innerHTML=""; return; }
   el.hidden=false;
+  const m=computeMonitors();
   const tile=(k,v,cls)=>'<div class="mon-tile'+(cls?" "+cls:"")+'"><span class="mon-v">'+v+'</span><span class="mon-k">'+k+'</span></div>';
   const homeNames = m.homeList.length
     ? '<div class="mon-home"><span class="mon-home-k">At home with</span> '+m.homeList.map(h=>'<span class="mon-chip">'+esc(h.who)+' <em>'+esc(h.tag)+'</em></span>').join("")+'</div>'
     : "";
-  el.innerHTML='<div class="mon-title">Monitors <span class="mon-count">'+m.total+' deployed'+(m.spareQty?' · '+m.spareQty+' spare':'')+'</span></div>'+
+  const btn='<button class="btn btn-sm" id="monManage" title="Add or update monitors">'+EDIT+'Update monitors</button>';
+  el.innerHTML='<div class="mon-title">Monitors <span class="mon-count">'+m.total+' deployed'+(m.spareQty?' · '+m.spareQty+' spare':'')+'</span>'+btn+'</div>'+
     '<div class="mon-tiles">'+
       tile("In use",m.inUse)+
       tile("At office",m.office)+
       tile("At home",m.home)+
       tile("Broken",m.broken,m.broken?"is-bad":"")+
       tile("Spare in stock",m.spareQty)+
-    '</div>'+homeNames;
+    '</div>'+
+    (m.total?homeNames:'<div class="mon-empty">No monitors tracked yet — use <b>Update monitors</b> to add who has one and where.</div>');
+}
+function nextMonTag(){
+  let max=0; state.assets.forEach(a=>{ const mm=/^MON(\d+)$/.exec(a.tag); if(mm) max=Math.max(max,parseInt(mm[1])); });
+  return "MON"+String(max+1).padStart(4,"0");
+}
+function monEditRow(a){
+  const loc = a && monLocation(a)==="home" ? "home":"office";
+  const broken = a ? monIsBroken(a) : false;
+  return '<div class="mon-edit-row" data-tag="'+(a?esc(a.tag):"")+'">'+
+    '<input class="me-who" placeholder="Name (or Office / room)" value="'+(a?esc(a.assignee):"")+'">'+
+    '<select class="me-loc"><option value="office"'+(loc==="office"?" selected":"")+'>Office</option><option value="home"'+(loc==="home"?" selected":"")+'>Home</option></select>'+
+    '<select class="me-st"><option value="ok"'+(!broken?" selected":"")+'>In use</option><option value="broken"'+(broken?" selected":"")+'>Broken</option></select>'+
+    '<button class="btn btn-ghost icon-btn me-del" type="button" title="Remove">'+XMARK+'</button>'+
+  '</div>';
+}
+function openMonitorsModal(){
+  if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
+  const mons=activeAssets().filter(a=>a.type==="monitor").sort((a,b)=>a.tag.localeCompare(b.tag));
+  openModal("Update monitors",
+    '<p class="hint">Track each monitor: who has it, where it lives, and whether it’s working. Set <b>Broken</b> to flag it for attention. New monitors get a MON#### tag automatically.</p>'+
+    '<div class="mon-edit-head"><span>Who / location</span><span>Where</span><span>Status</span><span></span></div>'+
+    '<div id="monEditList">'+(mons.map(monEditRow).join("")||"")+'</div>'+
+    '<button class="btn btn-sm" id="monAddRow" type="button" style="margin-top:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add monitor</button>',
+    '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Save monitors</button>');
+  const list=$("#monEditList");
+  if(!mons.length) list.insertAdjacentHTML("beforeend", monEditRow(null));
+  $("#monAddRow").onclick=()=>list.insertAdjacentHTML("beforeend", monEditRow(null));
+  list.addEventListener("click",e=>{ const d=e.target.closest(".me-del"); if(d) d.closest(".mon-edit-row").remove(); });
+  $("#mCancel").onclick=closeModal;
+  $("#mSave").onclick=async()=>{
+    const kept=new Set();
+    try{
+      for(const r of $$("#monEditList .mon-edit-row")){
+        const who=r.querySelector(".me-who").value.trim();
+        const loc=r.querySelector(".me-loc").value;
+        const stv=r.querySelector(".me-st").value;
+        let tag=r.dataset.tag;
+        if(!who && !tag) continue;
+        if(!tag) tag=nextMonTag();
+        kept.add(tag);
+        const ex=state.assets.find(x=>x.tag===tag);
+        const obj = ex ? Object.assign({},ex,{assignee:who, spec:(loc==="home"?"Home":"Office")})
+          : {tag, assignee:who, reassignedFrom:"", type:"monitor", kind:"other", model:"Monitor", variant:"", spec:(loc==="home"?"Home":"Office"), chip:"—", serial:"", retired:false};
+        await store.putAsset(obj);
+        const i=state.assets.findIndex(x=>x.tag===tag); if(i>=0) state.assets[i]=obj; else state.assets.push(obj);
+        const cur=entry(tag).status; const brokenNow=["damaged","missing","replace"].includes(cur);
+        if(stv==="broken" && !brokenNow) await saveEntry(tag,{status:"damaged"});
+        else if(stv!=="broken" && brokenNow) await saveEntry(tag,{status:"present"});
+      }
+      for(const a of activeAssets().filter(a=>a.type==="monitor" && !kept.has(a.tag))){
+        await store.delAsset(a.tag); state.assets=state.assets.filter(x=>x.tag!==a.tag);
+      }
+      closeModal(); renderAll(); toast("Monitors updated");
+    }catch(e){ toast(e.message,true); }
+  };
 }
 function renderSpares(){
   renderMonitors();
@@ -839,6 +895,7 @@ async function init(){
   $("#register").addEventListener("click",onRegisterClick);
   $("#register").addEventListener("input",onRegisterInput);
   $("#spares").addEventListener("click",onSparesClick);
+  $("#monSummary").addEventListener("click",e=>{ if(e.target.closest("#monManage")) openMonitorsModal(); });
   $("#invoices").addEventListener("click",onInvoicesClick);
   $("#navRegister").addEventListener("click",()=>setView("register"));
   $("#navSpares").addEventListener("click",()=>setView("spares"));

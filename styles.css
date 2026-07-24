@@ -277,7 +277,16 @@ body.audit-on .check-line{display:flex; grid-column:1/-1; gap:12px; margin-top:1
 
 /* ---------------------------- monitors panel ------------------------------- */
 .mon-panel{background:var(--surface); border:1px solid var(--line); border-radius:var(--r); padding:14px 16px; margin-bottom:16px;}
-.mon-title{font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); display:flex; align-items:baseline; gap:10px; margin-bottom:12px;}
+.mon-title{font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-2); display:flex; align-items:center; gap:10px; margin-bottom:12px;}
+.mon-title #monManage{margin-left:auto; text-transform:none; letter-spacing:0;}
+.mon-empty{margin-top:12px; padding-top:11px; border-top:1px dashed var(--line-2); font-size:12.5px; color:var(--ink-3);}
+.mon-edit-head{display:grid; grid-template-columns:1fr 110px 110px 36px; gap:8px; font-size:10px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3); font-weight:700; margin-bottom:6px; padding:0 2px;}
+.mon-edit-row{display:grid; grid-template-columns:1fr 110px 110px 36px; gap:8px; margin-bottom:8px; align-items:center;}
+.mon-edit-row input,.mon-edit-row select{height:36px; padding:0 10px; border-radius:8px; border:1px solid var(--line-2); background:var(--surface-2); color:var(--ink); font-size:13px; font-family:inherit; width:100%;}
+.mon-edit-row input:focus,.mon-edit-row select:focus{outline:none; border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft);}
+.mon-edit-row .me-del{color:var(--ink-3);}
+.mon-edit-row .me-del:hover{color:var(--flag);}
+@media (max-width:760px){ .mon-edit-head{display:none;} .mon-edit-row{grid-template-columns:1fr 1fr; grid-auto-rows:auto;} .mon-edit-row .me-who{grid-column:1/-1;} }
 .mon-title .mon-count{font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:0; text-transform:none; color:var(--ink-3);}
 .mon-tiles{display:grid; grid-template-columns:repeat(5,1fr); gap:10px;}
 .mon-tile{background:var(--surface-2); border:1px solid var(--line); border-radius:var(--r-sm); padding:11px 12px; display:flex; flex-direction:column; gap:3px;}
