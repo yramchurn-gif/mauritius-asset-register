@@ -294,6 +294,11 @@ body.audit-on .check-line{display:flex; grid-column:1/-1; gap:12px; margin-top:1
 .mon-tile .mon-k{font-size:11px; color:var(--ink-3); font-weight:600;}
 .mon-tile.is-bad{background:var(--flag-soft); border-color:var(--flag-line);}
 .mon-tile.is-bad .mon-v{color:var(--flag);}
+.mon-tile-adj{position:relative;}
+.mon-qty{display:flex; gap:5px; margin-top:8px;}
+.mon-qty .qbtn{width:26px; height:26px; border:1px solid var(--line-2); background:var(--surface); color:var(--ink-2); border-radius:7px; font-size:16px; display:grid; place-items:center; transition:background .12s,color .12s,border-color .12s;}
+.mon-qty .qbtn:hover:not(:disabled){background:var(--accent-soft); color:var(--accent); border-color:var(--accent);}
+.mon-qty .qbtn:disabled{opacity:.35; cursor:not-allowed;}
 .mon-home{margin-top:12px; padding-top:11px; border-top:1px dashed var(--line-2); display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:12.5px;}
 .mon-home-k{font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3); font-weight:700; margin-right:2px;}
 .mon-chip{display:inline-flex; align-items:center; gap:6px; background:var(--surface-2); border:1px solid var(--line-2); border-radius:100px; padding:3px 11px; font-weight:600; color:var(--ink-2);}

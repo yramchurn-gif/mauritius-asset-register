@@ -362,10 +362,14 @@ function renderMonitors(){
     ? '<div class="mon-home"><span class="mon-home-k">At home with</span> '+m.homeList.map(h=>'<span class="mon-chip">'+esc(h.who)+' <em>'+esc(h.tag)+'</em></span>').join("")+'</div>'
     : "";
   const btn='<button class="btn btn-sm" id="monManage" title="Add or update monitors">'+EDIT+'Update monitors</button>';
+  const canDec=monGenericOffice().length>0;
+  const officeTile='<div class="mon-tile mon-tile-adj"><span class="mon-v">'+m.office+'</span><span class="mon-k">At office</span>'+
+    '<div class="mon-qty"><button class="qbtn" type="button" data-act="mon-office-dec" title="Remove an unnamed office monitor"'+(canDec?"":" disabled")+'>−</button>'+
+    '<button class="qbtn" type="button" data-act="mon-office-inc" title="Add an office monitor">+</button></div></div>';
   el.innerHTML='<div class="mon-title">Monitors <span class="mon-count">'+m.total+' deployed'+(m.spareQty?' · '+m.spareQty+' spare':'')+'</span>'+btn+'</div>'+
     '<div class="mon-tiles">'+
       tile("In use",m.inUse)+
-      tile("At office",m.office)+
+      officeTile+
       tile("At home",m.home)+
       tile("Broken",m.broken,m.broken?"is-bad":"")+
       tile("Spare in stock",m.spareQty)+
@@ -385,6 +389,24 @@ function monEditRow(a){
     '<select class="me-st"><option value="ok"'+(!broken?" selected":"")+'>In use</option><option value="broken"'+(broken?" selected":"")+'>Broken</option></select>'+
     '<button class="btn btn-ghost icon-btn me-del" type="button" title="Remove">'+XMARK+'</button>'+
   '</div>';
+}
+// Unnamed, shared office monitors (no person, no serial) — safe to add/remove by count.
+function monGenericOffice(){
+  return activeAssets().filter(a=>a.type==="monitor" && monLocation(a)==="office" && !(a.serial||"").trim() && ["office","","store","stock","spare"].includes((a.assignee||"").trim().toLowerCase()));
+}
+async function monOfficeAdd(){
+  if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
+  const obj={tag:nextMonTag(),assignee:"Office",reassignedFrom:"",type:"monitor",kind:"other",model:"Monitor",variant:"Office monitor",spec:"Office",chip:"—",serial:"",retired:false};
+  try{ await store.putAsset(obj); state.assets.push(obj); renderAll(); setSaved("Office monitor added ("+obj.tag+")"); }
+  catch(e){ toast(e.message,true); }
+}
+async function monOfficeRemove(){
+  if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
+  const cands=monGenericOffice().sort((a,b)=>b.tag.localeCompare(a.tag));
+  if(!cands.length){ toast("No unnamed office monitors to remove — use Update monitors for assigned ones",true); return; }
+  const a=cands[0];
+  try{ await store.delAsset(a.tag); state.assets=state.assets.filter(x=>x.tag!==a.tag); renderAll(); setSaved("Office monitor removed ("+a.tag+")"); }
+  catch(e){ toast(e.message,true); }
 }
 function openMonitorsModal(){
   if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
@@ -895,7 +917,12 @@ async function init(){
   $("#register").addEventListener("click",onRegisterClick);
   $("#register").addEventListener("input",onRegisterInput);
   $("#spares").addEventListener("click",onSparesClick);
-  $("#monSummary").addEventListener("click",e=>{ if(e.target.closest("#monManage")) openMonitorsModal(); });
+  $("#monSummary").addEventListener("click",e=>{
+    if(e.target.closest("#monManage")) return openMonitorsModal();
+    const b=e.target.closest("button[data-act]"); if(!b) return;
+    if(b.dataset.act==="mon-office-inc") monOfficeAdd();
+    else if(b.dataset.act==="mon-office-dec") monOfficeRemove();
+  });
   $("#invoices").addEventListener("click",onInvoicesClick);
   $("#navRegister").addEventListener("click",()=>setView("register"));
   $("#navSpares").addEventListener("click",()=>setView("spares"));
