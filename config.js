@@ -13,5 +13,18 @@ window.MUR_CONFIG = {
   OFFICE: "Ebène · Regus",
   // Report recipient. Temporarily set to Yuvan for testing the email formatting.
   // Switch to "gcateau@bspot.com" once the format is signed off.
-  REPORT_TO: "yramchurn@bspot.com"
+  REPORT_TO: "yramchurn@bspot.com",
+
+  // Who gets the automated low-stock alert email. Sent by the `low-stock-alert`
+  // Edge Function (see README) the moment a spare item drops to/below its
+  // threshold, and as a daily digest if alerts.sql is installed.
+  STOCK_ALERT_TO: ["yramchurn@bspot.com", "rsoodarchand@bspot.com"],
+
+  // Let the signed-in app send the low-stock alert directly (recommended).
+  // Set to false only if you drive alerts from the database (alerts.sql), so
+  // the same drop doesn't email twice.
+  CLIENT_STOCK_ALERTS: true,
+
+  // Default buyer prefilled on new invoices (from the Invoice Master Tracker).
+  BUYER_DEFAULT: "iWynn Solutions LTD"
 };
