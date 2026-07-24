@@ -123,11 +123,19 @@ Deno.serve(async (req) => {
 
   const sent: Record<string, unknown> = {};
 
-  // Slack (works with no verified email domain; posts to the configured channel)
+  // Slack — interactive Block Kit card (works with no verified email domain)
   if (slackOn) {
-    const slackText = `:warning: *Spare stock low* — Mauritius (Ebène)\n` +
-      low.map((s) => `• ${s.item} — *${s.qty}* in stock (min ${s.min_qty})`).join("\n");
-    sent.slack = await postSlack(slackText);
+    const listMd = low.map((s) => `• *${escapeMd(s.item)}* — ${s.qty} in stock _(min ${s.min_qty})_`).join("\n");
+    const fallback = `Spare stock low: ${low.length} item(s)`;
+    const blocks = [
+      { type: "header", text: { type: "plain_text", text: single ? "⚠️ Spare stock low" : `⚠️ ${low.length} spares low`, emoji: true } },
+      { type: "section", text: { type: "mrkdwn", text: listMd } },
+      { type: "context", elements: [{ type: "mrkdwn", text: `Mauritius (Ebène) office · ${new Date().toLocaleString("en-GB", { timeZone: "Indian/Mauritius" })}` }] },
+      { type: "actions", elements: [
+        { type: "button", text: { type: "plain_text", text: "Open Spares & Stock", emoji: true }, url: `${SITE_URL}/#spares`, style: "primary" },
+      ] },
+    ];
+    sent.slack = await postSlack(fallback, blocks);
   }
 
   // Email (Resend)
@@ -146,26 +154,31 @@ Deno.serve(async (req) => {
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]!));
 }
+function escapeMd(s: string): string {
+  return String(s).replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]!));
+}
 
 // Slack via bot token + channel id (chat.postMessage) or an incoming webhook URL.
 function slackConfigured(): boolean {
   return !!(Deno.env.get("SLACK_BOT_TOKEN") && Deno.env.get("SLACK_CHANNEL_ID")) || !!Deno.env.get("SLACK_WEBHOOK_URL");
 }
-async function postSlack(text: string): Promise<string> {
+// deno-lint-ignore no-explicit-any
+async function postSlack(text: string, blocks?: any[]): Promise<string> {
   const token = Deno.env.get("SLACK_BOT_TOKEN"), channel = Deno.env.get("SLACK_CHANNEL_ID");
   if (token && channel) {
     const r = await fetch("https://slack.com/api/chat.postMessage", {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json; charset=utf-8" },
-      body: JSON.stringify({ channel, text }),
+      body: JSON.stringify({ channel, text, blocks }),
     });
     const j = await r.json().catch(() => ({}));
     return r.ok && j.ok ? "ok" : `failed:${j.error || r.status}`;
   }
   const url = Deno.env.get("SLACK_WEBHOOK_URL");
   if (url) {
-    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, blocks }) });
     return r.ok ? "ok" : `failed:${r.status}`;
   }
   return "skipped";
 }
+const SITE_URL = "https://yramchurn-gif.github.io/mauritius-asset-register";
