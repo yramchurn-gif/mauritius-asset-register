@@ -323,7 +323,7 @@ function renderRegister(){
 function refreshRow(tag){ const a=state.assets.find(x=>x.tag===tag); if(!a)return; const old=$('.row[data-tag="'+CSS.escape(tag)+'"]'); if(!old)return; const tmp=document.createElement("div"); tmp.innerHTML=rowHTML(a); old.replaceWith(tmp.firstElementChild); }
 
 /* --------------------------------- spares ---------------------------------- */
-function isLow(s){ return s.qty<=s.min_qty; }
+function isLow(s){ return s.min_qty>0 && s.qty<=s.min_qty; }   // min 0 = no threshold, never low
 function sparePass(s){ if(!state.q) return true; return (s.item+" "+s.category+" "+s.note).toLowerCase().includes(state.q.toLowerCase()); }
 function spareHTML(s){
   const low=isLow(s);
@@ -701,7 +701,7 @@ async function invokeStockAlert(payload){
 }
 async function reconcileStockAlert(s){
   if(!s || !stockAlertsEnabled()) return;
-  const low = s.qty<=s.min_qty;
+  const low = s.min_qty>0 && s.qty<=s.min_qty;
   try{
     if(low && !s.low_alert_sent){
       await invokeStockAlert({reason:"threshold",item:s.item,category:s.category,qty:s.qty,min_qty:s.min_qty});

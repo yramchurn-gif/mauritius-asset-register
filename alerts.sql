@@ -57,8 +57,8 @@ create or replace function public.spares_low_stock_trigger()
 returns trigger language plpgsql security definer set search_path = public, extensions as $$
 declare crossed boolean;
 begin
-  -- Rearm once the item is restocked above its threshold.
-  if NEW.qty > NEW.min_qty then
+  -- min_qty of 0 means "no threshold" (never alert); rearm once restocked above it.
+  if NEW.min_qty <= 0 or NEW.qty > NEW.min_qty then
     NEW.low_alert_sent := false;
     return NEW;
   end if;
