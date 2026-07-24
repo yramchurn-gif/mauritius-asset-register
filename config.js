@@ -26,5 +26,15 @@ window.MUR_CONFIG = {
   CLIENT_STOCK_ALERTS: true,
 
   // Default buyer prefilled on new invoices (from the Invoice Master Tracker).
-  BUYER_DEFAULT: "iWynn Solutions LTD"
+  BUYER_DEFAULT: "iWynn Solutions LTD",
+
+  // Invoice receipts upload straight to Google Drive (keeps them with the rest
+  // of the invoices, so Supabase storage stays lean). Paste the OAuth 2.0
+  // Client ID from Google Cloud Console (APIs & Services → Credentials), with
+  // this site added as an Authorised JavaScript origin. Leave blank to fall
+  // back to uploading receipts into Supabase storage instead.
+  GOOGLE_CLIENT_ID: "",
+  // Drive folder receipts are uploaded into (defaults to the "Company Invoices"
+  // folder). Blank = the user's Drive root.
+  DRIVE_RECEIPTS_FOLDER_ID: "1U0qIjBs8osm5En0YYobRU0GyDTxrwAFl"
 };
