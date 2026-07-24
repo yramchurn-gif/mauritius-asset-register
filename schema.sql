@@ -101,9 +101,12 @@ do $$ begin begin execute 'alter publication supabase_realtime add table public.
 -- ---- receipt storage bucket ----------------------------------------------
 -- Private bucket that holds the uploaded receipt files. Only authenticated
 -- users can read/write; the app serves them through short-lived signed URLs.
-insert into storage.buckets (id, name, public)
-values ('receipts', 'receipts', false)
-on conflict (id) do nothing;
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('receipts', 'receipts', false, 26214400,
+        array['application/pdf','image/png','image/jpeg','image/jpg','image/webp','image/heic'])
+on conflict (id) do update
+  set file_size_limit    = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
 
 drop policy if exists "auth read receipts"   on storage.objects;
 drop policy if exists "auth write receipts"  on storage.objects;
