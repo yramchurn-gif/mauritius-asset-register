@@ -239,11 +239,23 @@ function renderStats(){
   const s=computeStats();
   setNum($("#sTotal"),s.total);
   $("#sTotalU").textContent=typeMix(s.byType);
-  setNum($("#sLaptops"),s.laptops);
-  $("#sLaptopsU").textContent="M2 · "+s.chips.M2+"   M3 · "+s.chips.M3+"   M4 · "+s.chips.M4+(s.chips.PC?"   PC · "+s.chips.PC:"");
+  // Second KPI card tracks the active type filter (defaults to Laptops).
+  const focus = TYPE_ORDER.includes(state.filter) ? state.filter : "laptop";
+  $("#sLaptopsK").textContent = TYPES[focus].group;
+  setNum($("#sLaptops"), s.byType[focus]||0);
   const spark=$("#sparkChips"); spark.innerHTML="";
-  const cc={M2:"var(--accent)",M3:"var(--ok)",M4:"var(--info)",PC:"var(--warn)"}; const tot=s.laptops||1;
-  ["M2","M3","M4","PC"].forEach(c=>{ if(s.chips[c]){ const i=document.createElement("i"); i.style.background=cc[c]; i.style.width=Math.max(6,(s.chips[c]/tot)*100)+"px"; i.title=c+": "+s.chips[c]; spark.appendChild(i); } });
+  if(focus==="laptop"){
+    $("#sLaptopsU").textContent="M2 · "+s.chips.M2+"   M3 · "+s.chips.M3+"   M4 · "+s.chips.M4+(s.chips.PC?"   PC · "+s.chips.PC:"");
+    const cc={M2:"var(--accent)",M3:"var(--ok)",M4:"var(--info)",PC:"var(--warn)"}; const tot=s.laptops||1;
+    ["M2","M3","M4","PC"].forEach(c=>{ if(s.chips[c]){ const i=document.createElement("i"); i.style.background=cc[c]; i.style.width=Math.max(6,(s.chips[c]/tot)*100)+"px"; i.title=c+": "+s.chips[c]; spark.appendChild(i); } });
+  } else {
+    const kinds={}; activeAssets().filter(a=>a.type===focus).forEach(a=>{ kinds[a.kind]=(kinds[a.kind]||0)+1; });
+    const ks=Object.keys(kinds);
+    $("#sLaptopsU").textContent = ks.map(k=>(KINDS[k]||k)+" · "+kinds[k]).join("   ")||"in service";
+    const cc={apple:"var(--ink-2)",android:"var(--ok)",windows:"var(--info)",ups:"var(--warn)",net:"var(--info)",other:"var(--pend)"};
+    const tot=(s.byType[focus]||1);
+    ks.forEach(k=>{ const i=document.createElement("i"); i.style.background=cc[k]||"var(--pend)"; i.style.width=Math.max(6,(kinds[k]/tot)*100)+"px"; i.title=(KINDS[k]||k)+": "+kinds[k]; spark.appendChild(i); });
+  }
   $("#pQuarter").textContent=qPretty(state.quarter);
   setNum($("#pDone"),s.present); $("#pTotal").textContent=s.total; setNum($("#pFlags"),s.issues);
   $("#lgOk").textContent=s.present; $("#lgBad").textContent=s.issues; $("#lgPend").textContent=s.pending;
@@ -476,6 +488,14 @@ const VIEW_META={
   spares:{title:"Spares & stock",sub:"Unassigned inventory",search:"Search spares…"},
   invoices:{title:"Invoicing",sub:"Purchases & receipts",search:"Search vendor, item, reference…"}
 };
+function updateRegisterSub(){
+  if(state.view!=="register") return;
+  const f=state.filter;
+  let suffix="";
+  if(f==="flag") suffix=" · Needs attention";
+  else if(TYPE_ORDER.includes(f)) suffix=" · "+TYPES[f].group;
+  $("#viewSub").textContent="Assigned equipment"+suffix;
+}
 function setView(v){
   state.view=v; const m=VIEW_META[v]||VIEW_META.register;
   $$(".nav-item").forEach(b=>b.setAttribute("aria-current", String(b.dataset.view===v)));
@@ -490,6 +510,7 @@ function setView(v){
   $("#search").placeholder = m.search;
   document.body.classList.remove("nav-open");
   renderView();
+  updateRegisterSub();
 }
 
 /* ------------------------------- audit mode -------------------------------- */
@@ -782,7 +803,7 @@ async function init(){
   $("#navInvoices").addEventListener("click",()=>setView("invoices"));
   $("#navToggle").addEventListener("click",()=>document.body.classList.toggle("nav-open"));
   $("#search").addEventListener("input",e=>{ state.q=e.target.value; renderView(); });
-  $("#filterType").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.filter=b.dataset.f; $$("#filterType button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderRegister(); });
+  $("#filterType").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.filter=b.dataset.f; $$("#filterType button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderStats(); renderRegister(); updateRegisterSub(); });
   $("#groupBy").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.group=b.dataset.g; $$("#groupBy button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderRegister(); });
   $("#btnAudit").addEventListener("click",()=>setAuditMode(!state.auditMode));
   $("#btnAuditDone").addEventListener("click",()=>{ setAuditMode(false); toast("Check paused — progress saved"); });
