@@ -677,11 +677,33 @@ function openReportModal(){
     '<button class="btn" id="r_csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Download CSV</button><button class="btn" id="r_txt">Download report</button><button class="btn btn-primary" id="r_mail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18v12H3z"/><path d="M3 7l9 6 9-6"/></svg>Email report</button>');
   $("#r_csv").onclick=()=>download("MUR_equipment_check_"+qslug+".csv",buildCSV(),"text/csv;charset=utf-8");
   $("#r_txt").onclick=()=>download("MUR_equipment_check_"+qslug+".txt",buildReport());
-  $("#r_mail").onclick=()=>{ state.gerardEmail=$("#r_to").value.trim()||state.gerardEmail; localStorage.setItem("mur_gerard",state.gerardEmail);
+  $("#r_mail").onclick=async()=>{ const to=$("#r_to").value.trim()||state.gerardEmail; state.gerardEmail=to; localStorage.setItem("mur_gerard",to);
     const subj="Mauritius Quarterly Equipment Check — "+qPretty(state.quarter);
-    const body=buildReport()+"\n\n(The full line-by-line register is attached separately as a CSV — use the Download CSV button.)";
-    window.location.href="mailto:"+encodeURIComponent(state.gerardEmail)+"?subject="+encodeURIComponent(subj)+"&body="+encodeURIComponent(body); };
+    const body=buildReport();
+    const btn=$("#r_mail");
+    // Preferred: send server-side through the send-report Edge Function (works
+    // without a desktop mail client, and attaches the CSV). Falls back to a
+    // mailto: link when not signed in or the function isn't available.
+    if(store.live && sb){
+      btn.disabled=true; const old=btn.innerHTML; btn.textContent="Sending…";
+      try{
+        const {data,error}=await sb.functions.invoke("send-report",{body:{to,subject:subj,text:body,csv_base64:b64(buildCSV()),csv_name:"MUR_equipment_check_"+qslug+".csv"}});
+        if(error) throw error;
+        if(data&&data.error) throw new Error(data.error+(data.detail?(" — "+data.detail):""));
+        toast("Report emailed to "+to); closeModal(); return;
+      }catch(e){ toast("Couldn't send: "+e.message+" — opening your mail app instead",true); mailtoReport(to,subj,body); }
+      finally{ btn.disabled=false; btn.innerHTML=old; }
+    } else {
+      mailtoReport(to,subj,body);
+    }
+  };
 }
+function mailtoReport(to,subj,body){
+  const full=body+"\n\n(The full line-by-line register is attached separately as a CSV — use the Download CSV button.)";
+  window.location.href="mailto:"+encodeURIComponent(to)+"?subject="+encodeURIComponent(subj)+"&body="+encodeURIComponent(full);
+}
+// UTF-8 safe base64 (for CSV attachment)
+function b64(str){ return btoa(unescape(encodeURIComponent(str))); }
 
 /* --------------------------------- backup ---------------------------------- */
 function openBackupModal(){
