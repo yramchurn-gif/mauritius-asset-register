@@ -360,22 +360,23 @@ function renderMonitors(){
   const el=$("#monSummary"); if(!el) return;
   el.hidden=false;
   const m=computeMonitors();
-  const tile=(k,v,cls)=>'<div class="mon-tile'+(cls?" "+cls:"")+'"><span class="mon-v">'+v+'</span><span class="mon-k">'+k+'</span></div>';
   const homeNames = m.homeList.length
     ? '<div class="mon-home"><span class="mon-home-k">At home with</span> '+m.homeList.map(h=>'<span class="mon-chip">'+esc(h.who)+'</span>').join("")+'</div>'
     : "";
   const btn='<button class="btn btn-sm" id="monManage" title="Add or update monitors">'+EDIT+'Update monitors</button>';
-  const canDec=monGenericOffice().length>0;
-  const officeTile='<div class="mon-tile mon-tile-adj"><span class="mon-v">'+m.office+'</span><span class="mon-k">At office</span>'+
-    '<div class="mon-qty"><button class="qbtn" type="button" data-act="mon-office-dec" title="Remove an unnamed office monitor"'+(canDec?"":" disabled")+'>−</button>'+
-    '<button class="qbtn" type="button" data-act="mon-office-inc" title="Add an office monitor">+</button></div></div>';
+  const tile=(k,v,bucket,cls)=>{
+    const canDec = bucket==="spare" ? m.spareQty>0 : monBucketCands(bucket).length>0;
+    return '<div class="mon-tile mon-tile-adj'+(cls?" "+cls:"")+'"><span class="mon-v">'+v+'</span><span class="mon-k">'+k+'</span>'+
+      '<div class="mon-qty"><button class="qbtn" type="button" data-act="mon-dec" data-bucket="'+bucket+'"'+(canDec?"":" disabled")+'>−</button>'+
+      '<button class="qbtn" type="button" data-act="mon-inc" data-bucket="'+bucket+'">+</button></div></div>';
+  };
   el.innerHTML='<div class="mon-title">Monitors <span class="mon-count">'+m.total+' deployed'+(m.spareQty?' · '+m.spareQty+' spare':'')+'</span>'+btn+'</div>'+
     '<div class="mon-tiles">'+
-      tile("In use",m.inUse)+
-      officeTile+
-      tile("At home",m.home)+
-      tile("Broken",m.broken,m.broken?"is-bad":"")+
-      tile("Spare in stock",m.spareQty)+
+      tile("In use",m.inUse,"inuse")+
+      tile("At office",m.office,"office")+
+      tile("At home",m.home,"home")+
+      tile("Broken",m.broken,"broken",m.broken?"is-bad":"")+
+      tile("Spare in stock",m.spareQty,"spare")+
     '</div>'+
     (m.total?homeNames:'<div class="mon-empty">No monitors tracked yet — use <b>Update monitors</b> to add who has one and where.</div>');
 }
@@ -393,23 +394,51 @@ function monEditRow(a){
     '<button class="btn btn-ghost icon-btn me-del" type="button" title="Remove">'+XMARK+'</button>'+
   '</div>';
 }
-// Unnamed, shared office monitors (no person, no serial) — safe to add/remove by count.
-function monGenericOffice(){
-  return activeAssets().filter(a=>a.type==="monitor" && monLocation(a)==="office" && !(a.serial||"").trim() && ["office","","store","stock","spare"].includes((a.assignee||"").trim().toLowerCase()));
+// Unnamed, shared monitors (no person, no serial) — safe to add/remove by count.
+// Named or serial-tagged monitors are only touched via the Update monitors editor.
+function monGeneric(){
+  return activeAssets().filter(a=>a.type==="monitor" && !(a.serial||"").trim() && ["office","home","","store","stock","spare"].includes((a.assignee||"").trim().toLowerCase()));
 }
-async function monOfficeAdd(){
-  if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
-  const obj={tag:nextMonTag(),assignee:"Office",reassignedFrom:"",type:"monitor",kind:"other",model:"Monitor",variant:"Office monitor",spec:"Office",chip:"—",serial:"",retired:false};
-  try{ await store.putAsset(obj); state.assets.push(obj); renderAll(); setSaved("Office monitor added ("+obj.tag+")"); }
-  catch(e){ toast(e.message,true); }
+function monBucketCands(bucket){
+  const g=monGeneric();
+  if(bucket==="office") return g.filter(a=>!monIsBroken(a) && monLocation(a)==="office");
+  if(bucket==="home")   return g.filter(a=>!monIsBroken(a) && monLocation(a)==="home");
+  if(bucket==="broken") return g.filter(a=> monIsBroken(a));
+  if(bucket==="inuse")  return g.filter(a=>!monIsBroken(a));
+  return [];
 }
-async function monOfficeRemove(){
+function newMon(loc){ return {tag:nextMonTag(),assignee:(loc==="home"?"Home":"Office"),reassignedFrom:"",type:"monitor",kind:"other",model:"Monitor",variant:(loc==="home"?"Home monitor":"Office monitor"),spec:(loc==="home"?"Home":"Office"),chip:"—",serial:"",retired:false}; }
+async function monAdjust(bucket,delta){
   if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
-  const cands=monGenericOffice().sort((a,b)=>b.tag.localeCompare(a.tag));
-  if(!cands.length){ toast("No unnamed office monitors to remove — use Update monitors for assigned ones",true); return; }
-  const a=cands[0];
-  try{ await store.delAsset(a.tag); state.assets=state.assets.filter(x=>x.tag!==a.tag); renderAll(); setSaved("Office monitor removed ("+a.tag+")"); }
-  catch(e){ toast(e.message,true); }
+  try{
+    // Spare stock = a Spares line in the "monitor" category.
+    if(bucket==="spare"){
+      let sp=state.spares.find(s=>s.category==="monitor");
+      if(!sp){ if(delta<0) return; await store.addSpare({item:"Spare monitor",category:"monitor",qty:1,min_qty:0,note:""}); }
+      else { const nq=Math.max(0,sp.qty+delta); await store.updateSpare(sp.id,{qty:nq}); }
+      state.spares=await store.allSpares(); renderAll(); setSaved("Monitor stock updated"); return;
+    }
+    // Broken toggles a unit's condition rather than adding/removing hardware.
+    if(bucket==="broken"){
+      if(delta>0){
+        const w=monGeneric().filter(a=>!monIsBroken(a)).sort((a,b)=>(monLocation(a)==="office"?-1:1));
+        if(w.length){ await saveEntry(w[0].tag,{status:"damaged"}); renderAll(); setSaved("Flagged broken ("+w[0].tag+")"); return; }
+        const obj=newMon("office"); await store.putAsset(obj); state.assets.push(obj); await saveEntry(obj.tag,{status:"damaged"}); renderAll(); setSaved("Broken monitor added ("+obj.tag+")"); return;
+      }
+      const brk=monBucketCands("broken").sort((a,b)=>b.tag.localeCompare(a.tag));
+      if(!brk.length){ toast("No broken monitor to clear",true); return; }
+      await saveEntry(brk[0].tag,{status:"present"}); renderAll(); setSaved("Marked working ("+brk[0].tag+")"); return;
+    }
+    // office / home / inuse: add or remove a shared unit.
+    if(delta>0){
+      const obj=newMon(bucket==="home"?"home":"office");
+      await store.putAsset(obj); state.assets.push(obj); renderAll(); setSaved("Monitor added ("+obj.tag+")");
+    } else {
+      const cands=monBucketCands(bucket).sort((a,b)=>b.tag.localeCompare(a.tag));
+      if(!cands.length){ toast("No unnamed monitor to remove here — use Update monitors",true); return; }
+      const a=cands[0]; await store.delAsset(a.tag); state.assets=state.assets.filter(x=>x.tag!==a.tag); renderAll(); setSaved("Monitor removed ("+a.tag+")");
+    }
+  }catch(e){ toast(e.message,true); }
 }
 function openMonitorsModal(){
   if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
@@ -931,8 +960,8 @@ async function init(){
   $("#monSummary").addEventListener("click",e=>{
     if(e.target.closest("#monManage")) return openMonitorsModal();
     const b=e.target.closest("button[data-act]"); if(!b) return;
-    if(b.dataset.act==="mon-office-inc") monOfficeAdd();
-    else if(b.dataset.act==="mon-office-dec") monOfficeRemove();
+    if(b.dataset.act==="mon-inc") monAdjust(b.dataset.bucket,1);
+    else if(b.dataset.act==="mon-dec") monAdjust(b.dataset.bucket,-1);
   });
   $("#invoices").addEventListener("click",onInvoicesClick);
   $("#navRegister").addEventListener("click",()=>setView("register"));
