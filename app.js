@@ -898,13 +898,37 @@ function openAuthModal(){
   openModal("Sign in",
     '<p class="hint">Sign in to load and edit the live Mauritius register and stock.</p>'+
     '<div class="field"><label>Email</label><input id="au_email" type="email" autocomplete="username" placeholder="you@bspot.com"></div>'+
-    '<div class="field"><label>Password</label><input id="au_pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>',
+    '<div class="field"><label>Password</label><input id="au_pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>'+
+    '<p class="hint" style="margin-top:2px"><a href="#" id="au_forgot" style="color:var(--accent)">Forgot your password?</a></p>',
     '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSignin">Sign in</button>',true);
   $("#au_email").focus();
   const submit=async()=>{ const email=$("#au_email").value.trim(), password=$("#au_pass").value; if(!email||!password){ toast("Enter your email and password",true); return; }
     $("#mSignin").disabled=true; const {error}=await sb.auth.signInWithPassword({email,password}); $("#mSignin").disabled=false;
     if(error){ toast(error.message,true); return; } closeModal(); };
   $("#mSignin").onclick=submit; $("#au_pass").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); }); $("#mCancel").onclick=closeModal;
+  $("#au_forgot").onclick=async(e)=>{ e.preventDefault(); const email=$("#au_email").value.trim(); if(!email){ toast("Enter your email first, then tap “Forgot your password?”",true); $("#au_email").focus(); return; }
+    const { error }=await sb.auth.resetPasswordForEmail(email,{ redirectTo: location.origin+location.pathname }); if(error){ toast(error.message,true); return; }
+    toast("Reset link sent to "+email+" — open it to set a new password."); };
+}
+
+// Shown when the user arrives via a password-reset link (Supabase fires a
+// PASSWORD_RECOVERY event). They pick a new password; updateUser applies it to
+// the recovery session, after which they're signed in normally.
+function openResetModal(){
+  openModal("Set a new password",
+    '<p class="hint">You followed a password-reset link. Choose a new password to finish.</p>'+
+    '<div class="field"><label>New password</label><input id="rp_pass" type="password" autocomplete="new-password" placeholder="At least 8 characters"></div>'+
+    '<div class="field"><label>Confirm new password</label><input id="rp_pass2" type="password" autocomplete="new-password" placeholder="Re-type it"></div>',
+    '<button class="btn btn-primary" id="mReset" style="margin-left:auto">Update password</button>',true);
+  $("#rp_pass").focus();
+  const submit=async()=>{ const p1=$("#rp_pass").value, p2=$("#rp_pass2").value;
+    if(p1.length<8){ toast("Use at least 8 characters",true); return; }
+    if(p1!==p2){ toast("The two passwords don’t match",true); return; }
+    $("#mReset").disabled=true; const { error }=await sb.auth.updateUser({ password:p1 }); $("#mReset").disabled=false;
+    if(error){ toast(error.message,true); return; }
+    // strip the recovery token from the URL so a refresh doesn't re-trigger it
+    history.replaceState(null,"",location.origin+location.pathname); closeModal(); toast("Password updated — you’re signed in."); };
+  $("#mReset").onclick=submit; $("#rp_pass2").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); });
 }
 function askAuditor(){
   openModal("Who's running this check?",'<div class="field"><label>Checked by</label><input id="inAuditor" placeholder="e.g. Yuvan Ramchurn" value="'+esc(state.auditor)+'"></div><p class="hint">Recorded against each item you check, and shown on the report.</p>',
@@ -1165,7 +1189,7 @@ async function init(){
 
   setView("register");
   if(configured && sb){
-    sb.auth.onAuthStateChange((event,session)=>{ if(session&&session.user){ onSignedIn(session); } else { onSignedOut(); } });
+    sb.auth.onAuthStateChange((event,session)=>{ if(event==="PASSWORD_RECOVERY"){ openResetModal(); return; } if(session&&session.user){ onSignedIn(session); } else { onSignedOut(); } });
     const {data}=await sb.auth.getSession();
     if(data && data.session){ await onSignedIn(data.session); } else { await useStore(localStore); }
   } else { await useStore(localStore); }
