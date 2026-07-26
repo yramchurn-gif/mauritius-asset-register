@@ -408,15 +408,8 @@ function nextMonTag(){
   let max=0; state.assets.forEach(a=>{ const mm=/^MON(\d+)$/.exec(a.tag); if(mm) max=Math.max(max,parseInt(mm[1])); });
   return "MON"+String(max+1).padStart(4,"0");
 }
-function monEditRow(a){
-  const loc = a && monLocation(a)==="home" ? "home":"office";
-  const broken = a ? monIsBroken(a) : false;
-  return '<div class="mon-edit-row" data-tag="'+(a?esc(a.tag):"")+'">'+
-    '<input class="me-who" placeholder="Name (or Office / room)" value="'+(a?esc(a.assignee):"")+'">'+
-    '<select class="me-loc"><option value="office"'+(loc==="office"?" selected":"")+'>Office</option><option value="home"'+(loc==="home"?" selected":"")+'>Home</option></select>'+
-    '<select class="me-st"><option value="ok"'+(!broken?" selected":"")+'>In use</option><option value="broken"'+(broken?" selected":"")+'>Broken</option></select>'+
-    '<button class="btn btn-ghost icon-btn me-del" type="button" title="Remove">'+XMARK+'</button>'+
-  '</div>';
+function homeNameRow(name){
+  return '<div class="mon-home-row"><input class="mh-name" value="'+esc(name||"")+'" placeholder="Name — who has it at home"><button class="btn btn-ghost icon-btn mh-del" type="button" title="Remove">'+XMARK+'</button></div>';
 }
 // Unnamed, shared monitors (no person, no serial) — safe to add/remove by count.
 // Named or serial-tagged monitors are only touched via the Update monitors editor.
@@ -476,43 +469,53 @@ async function monAdjust(bucket,delta){
 }
 function openMonitorsModal(){
   if(!store.live){ toast("Sign in to update monitors",true); openAuthModal(); return; }
-  const mons=activeAssets().filter(a=>a.type==="monitor").sort((a,b)=>a.tag.localeCompare(b.tag));
-  openModal("Update monitors",
-    '<p class="hint">Track each monitor: who has it, where it lives, and whether it’s working. Set <b>Broken</b> to flag it for attention. New monitors get a MON#### tag automatically.</p>'+
-    '<div class="mon-edit-head"><span>Who / location</span><span>Where</span><span>Status</span><span></span></div>'+
-    '<div id="monEditList">'+(mons.map(monEditRow).join("")||"")+'</div>'+
-    '<button class="btn btn-sm" id="monAddRow" type="button" style="margin-top:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add monitor</button>',
+  const m=computeMonitors();
+  const homeNames=m.homeList.map(h=>h.who);
+  openModal("Monitors",
+    '<p class="hint">Set how many monitors are in each state. <b>Home</b> ones are listed by who has them.</p>'+
+    '<div class="mon-set">'+
+      '<div class="mon-set-row"><label>Office</label><input id="ms_office" type="number" min="0" value="'+m.office+'"></div>'+
+      '<div class="mon-set-row"><label>Broken</label><input id="ms_broken" type="number" min="0" value="'+m.broken+'"></div>'+
+      '<div class="mon-set-row"><label>Spare in stock</label><input id="ms_spare" type="number" min="0" value="'+m.spareQty+'"></div>'+
+    '</div>'+
+    '<div class="field" style="margin-top:14px"><label>At home — one line per person</label>'+
+      '<div id="ms_home">'+(homeNames.length?homeNames.map(homeNameRow).join(""):"")+'</div>'+
+      '<button class="btn btn-sm" id="ms_homeAdd" type="button" style="margin-top:8px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add person</button></div>',
     '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Save monitors</button>');
-  const list=$("#monEditList");
-  if(!mons.length) list.insertAdjacentHTML("beforeend", monEditRow(null));
-  $("#monAddRow").onclick=()=>list.insertAdjacentHTML("beforeend", monEditRow(null));
-  list.addEventListener("click",e=>{ const d=e.target.closest(".me-del"); if(d) d.closest(".mon-edit-row").remove(); });
+  const homeList=$("#ms_home");
+  $("#ms_homeAdd").onclick=()=>homeList.insertAdjacentHTML("beforeend",homeNameRow(""));
+  homeList.addEventListener("click",e=>{ const d=e.target.closest(".mh-del"); if(d) d.closest(".mon-home-row").remove(); });
   $("#mCancel").onclick=closeModal;
   $("#mSave").onclick=async()=>{
-    const kept=new Set();
+    const officeT=Math.max(0,parseInt($("#ms_office").value)||0);
+    const brokenT=Math.max(0,parseInt($("#ms_broken").value)||0);
+    const spareT=Math.max(0,parseInt($("#ms_spare").value)||0);
+    const names=$$("#ms_home .mh-name").map(i=>i.value.trim()).filter(Boolean);
+    $("#mSave").disabled=true;
     try{
-      for(const r of $$("#monEditList .mon-edit-row")){
-        const who=r.querySelector(".me-who").value.trim();
-        const loc=r.querySelector(".me-loc").value;
-        const stv=r.querySelector(".me-st").value;
-        let tag=r.dataset.tag;
-        if(!who && !tag) continue;
-        if(!tag) tag=nextMonTag();
-        kept.add(tag);
-        const ex=state.assets.find(x=>x.tag===tag);
-        const obj = ex ? Object.assign({},ex,{assignee:who, spec:(loc==="home"?"Home":"Office")})
-          : {tag, assignee:who, reassignedFrom:"", type:"monitor", kind:"other", model:"Monitor", variant:"", spec:(loc==="home"?"Home":"Office"), chip:"—", serial:"", retired:false};
-        await store.putAsset(obj);
-        const i=state.assets.findIndex(x=>x.tag===tag); if(i>=0) state.assets[i]=obj; else state.assets.push(obj);
-        const cur=entry(tag).status; const brokenNow=["damaged","missing","replace"].includes(cur);
-        if(stv==="broken" && !brokenNow) await saveEntry(tag,{status:"damaged"});
-        else if(stv!=="broken" && brokenNow) await saveEntry(tag,{status:"present"});
+      // Broken: match the count (add new damaged units, or remove extras)
+      const broken=monBucketAll("broken");
+      if(brokenT>broken.length){ for(let i=0;i<brokenT-broken.length;i++){ const o=newMon("office"); await store.putAsset(o); await saveEntry(o.tag,{status:"damaged"}); } }
+      else if(brokenT<broken.length){ for(const a of broken.slice().sort((x,y)=>y.tag.localeCompare(x.tag)).slice(0,broken.length-brokenT)) await store.delAsset(a.tag); }
+      // Home: reconcile the named list (add missing, remove those no longer listed)
+      const curHome=monBucketAll("home"); const curNames=curHome.map(a=>(a.assignee||"").trim());
+      for(const nm of names){ if(!curNames.includes(nm)){ const o=newMon("home"); o.assignee=nm; o.variant="Home monitor"; await store.putAsset(o); } }
+      for(const a of curHome){ if(!names.includes((a.assignee||"").trim())) await store.delAsset(a.tag); }
+      // Office: match the count (unnamed first when removing)
+      const curOffice=monBucketAll("office");
+      if(officeT>curOffice.length){ for(let i=0;i<officeT-curOffice.length;i++){ const o=newMon("office"); await store.putAsset(o); } }
+      else if(officeT<curOffice.length){
+        const gen=curOffice.filter(a=>!(a.serial||"").trim()).sort((a,b)=>b.tag.localeCompare(a.tag));
+        const named=curOffice.filter(a=>(a.serial||"").trim()).sort((a,b)=>b.tag.localeCompare(a.tag));
+        for(const a of gen.concat(named).slice(0,curOffice.length-officeT)) await store.delAsset(a.tag);
       }
-      for(const a of activeAssets().filter(a=>a.type==="monitor" && !kept.has(a.tag))){
-        await store.delAsset(a.tag); state.assets=state.assets.filter(x=>x.tag!==a.tag);
-      }
+      // Spare stock (Spares "monitor" line)
+      const sp=state.spares.find(s=>s.category==="monitor");
+      if(!sp){ if(spareT>0) await store.addSpare({item:"Spare monitor",category:"monitor",qty:spareT,min_qty:0,note:""}); }
+      else await store.updateSpare(sp.id,{qty:spareT});
+      state.assets=await store.allAssets(); state.spares=await store.allSpares(); await loadEntries();
       closeModal(); renderAll(); toast("Monitors updated");
-    }catch(e){ toast(e.message,true); }
+    }catch(e){ toast(e.message,true); $("#mSave").disabled=false; }
   };
 }
 function renderSpares(){
