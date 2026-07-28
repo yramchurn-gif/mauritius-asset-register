@@ -124,6 +124,17 @@ alter table public.assets drop constraint if exists assets_kind_chk;
 alter table public.assets add constraint assets_kind_chk check (kind in ('apple','windows','android','ups','net','other'));
 alter table public.audit_entries drop constraint if exists audit_status_chk;
 alter table public.audit_entries add constraint audit_status_chk check (status in ('pending','present','damaged','missing','replace'));
+
+-- ---- per-person custom accessories ----------------------------------------
+-- `assets.accessories`  : the extra accessories a specific person has, beyond
+--                         the standard charger/hub/headset/mouse — e.g.
+--                         ["Keyboard","Docking station"]. Permanent per person,
+--                         so it appears in every quarterly check.
+-- `audit_entries.extra` : that quarter's present/absent tick for each custom
+--                         accessory, keyed by name — e.g. {"Keyboard":true}.
+alter table public.assets        add column if not exists accessories jsonb not null default '[]'::jsonb;
+alter table public.audit_entries add column if not exists extra       jsonb not null default '{}'::jsonb;
+
 -- one invoice number can't be reused (blank allowed for un-numbered rows)
 create unique index if not exists invoices_no_uniq on public.invoices (invoice_no) where invoice_no <> '';
 
