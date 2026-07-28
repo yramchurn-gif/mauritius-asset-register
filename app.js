@@ -788,6 +788,13 @@ function addNewHireKit(){
 /* --------------------------------- views ----------------------------------- */
 function renderView(){ if(state.view==="spares") renderSpares(); else if(state.view==="invoices") renderInvoices(); else if(state.view==="procurement") renderProcurement(); else renderRegister(); }
 function renderAll(){ renderStats(); renderView(); }
+/* True while the user is typing in a field (note box, search, a modal input). */
+function isEditingField(){ const el=document.activeElement; return !!el && (el.tagName==="TEXTAREA" || el.tagName==="INPUT"); }
+/* Realtime broadcasts our own writes back to us. Rebuilding the list on that
+   echo while someone is mid-note destroys the textarea they're typing in (cursor
+   jump / lag), so refresh only the lightweight stats while a field is focused —
+   state is already current, and the next real render picks up the rest. */
+function renderLive(){ if(isEditingField()){ renderStats(); return; } renderAll(); }
 const VIEW_META={
   register:{title:"Register",sub:"Assigned equipment",search:"Search tag, person, device…"},
   spares:{title:"Spares & stock",sub:"Unassigned inventory",search:"Search spares…"},
@@ -1129,11 +1136,11 @@ async function onSignedOut(){ state.user=null; state.auditMode=false; document.b
 let rtChannel=null;
 function subscribeRealtime(){ if(!sb || rtChannel) return;
   try{ rtChannel=sb.channel("mur-live")
-      .on("postgres_changes",{event:"*",schema:"public",table:"assets"},async()=>{ state.assets=await store.allAssets(); renderAll(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"audit_entries"},async()=>{ await loadEntries(); renderAll(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"spares"},async()=>{ state.spares=await store.allSpares(); renderAll(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"invoices"},async()=>{ state.invoices=await store.allInvoices(); renderAll(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"procurement"},async()=>{ state.procurement=await store.allProcurement(); renderAll(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"assets"},async()=>{ state.assets=await store.allAssets(); renderLive(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"audit_entries"},async()=>{ await loadEntries(); renderLive(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"spares"},async()=>{ state.spares=await store.allSpares(); renderLive(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"invoices"},async()=>{ state.invoices=await store.allInvoices(); renderLive(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"procurement"},async()=>{ state.procurement=await store.allProcurement(); renderLive(); })
       .subscribe(); }catch(e){}
 }
 
