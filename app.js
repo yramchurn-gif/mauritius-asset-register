@@ -83,12 +83,14 @@ const SAMPLE_PROCUREMENT=[
   {item:'Work phone (iPhone)',category:'phone',for_who:'New hire — CRM',qty:1,unit_cost:22500,currency:'Rs',needed_by:'2026-08-15',status:'ordered',note:''},
   {item:'Monitor',category:'monitor',for_who:'Office spare',qty:2,unit_cost:8000,currency:'Rs',needed_by:'',status:'planned',note:''}
 ];
-function rowToObj(r){ return { tag:r[0], assignee:r[1], reassignedFrom:r[2], type:r[3], kind:r[4], model:r[5], variant:r[6], spec:r[7], chip:r[8], serial:r[9], retired:false }; }
+function rowToObj(r){ return { tag:r[0], assignee:r[1], reassignedFrom:r[2], type:r[3], kind:r[4], model:r[5], variant:r[6], spec:r[7], chip:r[8], serial:r[9], retired:false, accessories:[] }; }
 
 /* ------------------------------ db <-> app mapping ------------------------- */
-function fromDb(r){ return { tag:r.tag, assignee:r.assignee||"", reassignedFrom:r.reassigned_from||"", type:r.type, kind:r.kind, model:r.model||"", variant:r.variant||"", spec:r.spec||"", chip:r.chip||"—", serial:r.serial||"", retired:!!r.retired }; }
-function toDb(a){ return { tag:a.tag, assignee:a.assignee, reassigned_from:a.reassignedFrom, type:a.type, kind:a.kind, model:a.model, variant:a.variant, spec:a.spec, chip:a.chip, serial:a.serial, retired:!!a.retired, updated_at:new Date().toISOString() }; }
-function entryFromDb(r){ return {status:r.status||"pending", note:r.note||"", at:r.checked_at, by:r.checked_by||"", periph:{charger:!!r.charger,hub:!!r.hub,headset:!!r.headset,mouse:!!r.mouse}}; }
+function normAccessories(v){ if(Array.isArray(v)) return v.filter(x=>typeof x==="string"); if(typeof v==="string"){ try{ const p=JSON.parse(v); return Array.isArray(p)?p.filter(x=>typeof x==="string"):[]; }catch(e){ return []; } } return []; }
+function normExtra(v){ if(v&&typeof v==="object"&&!Array.isArray(v)) return v; if(typeof v==="string"){ try{ const p=JSON.parse(v); return (p&&typeof p==="object"&&!Array.isArray(p))?p:{}; }catch(e){ return {}; } } return {}; }
+function fromDb(r){ return { tag:r.tag, assignee:r.assignee||"", reassignedFrom:r.reassigned_from||"", type:r.type, kind:r.kind, model:r.model||"", variant:r.variant||"", spec:r.spec||"", chip:r.chip||"—", serial:r.serial||"", retired:!!r.retired, accessories:normAccessories(r.accessories) }; }
+function toDb(a){ return { tag:a.tag, assignee:a.assignee, reassigned_from:a.reassignedFrom, type:a.type, kind:a.kind, model:a.model, variant:a.variant, spec:a.spec, chip:a.chip, serial:a.serial, retired:!!a.retired, accessories:normAccessories(a.accessories), updated_at:new Date().toISOString() }; }
+function entryFromDb(r){ return {status:r.status||"pending", note:r.note||"", at:r.checked_at, by:r.checked_by||"", periph:{charger:!!r.charger,hub:!!r.hub,headset:!!r.headset,mouse:!!r.mouse}, extra:normExtra(r.extra)}; }
 function spareFromDb(r){ return {id:r.id, item:r.item, category:r.category, qty:r.qty, min_qty:r.min_qty, note:r.note||"", low_alert_sent:!!r.low_alert_sent}; }
 function invoiceFromDb(r){ return {id:r.id, invoice_no:r.invoice_no||"", purchase_date:r.purchase_date||"", vendor:r.vendor||"", buyer:r.buyer||"", representative:r.representative||"", item_description:r.item_description||"", category:r.category||"other", quantity:Number(r.quantity||0), unit_price:Number(r.unit_price||0), total_amount:Number(r.total_amount||0), currency:r.currency||"Rs", payment_method:r.payment_method||"", transaction_ref:r.transaction_ref||"", receipt_path:r.receipt_path||"", receipt_url:r.receipt_url||"", note:r.note||"", uploaded_by:r.uploaded_by||""}; }
 function invoiceToDb(v){ return {invoice_no:v.invoice_no, purchase_date:v.purchase_date||null, vendor:v.vendor, buyer:v.buyer, representative:v.representative, item_description:v.item_description, category:v.category, quantity:v.quantity, unit_price:v.unit_price, total_amount:v.total_amount, currency:v.currency, payment_method:v.payment_method, transaction_ref:v.transaction_ref, receipt_path:v.receipt_path, receipt_url:v.receipt_url, note:v.note, uploaded_by:v.uploaded_by}; }
@@ -107,9 +109,9 @@ const localStore = {
   async putAsset(a){ const o=lsInit(); const i=o.assets.findIndex(x=>x.tag===a.tag); if(i>=0)o.assets[i]=a; else o.assets.push(a); lsWrite(o); },
   async delAsset(tag){ const o=lsInit(); o.assets=o.assets.filter(x=>x.tag!==tag); lsWrite(o); },
   async getHistory(){ return []; },
-  async getEntries(q){ const o=lsInit(); const src=o.entries[q]||{}; const m={}; for(const t in src){ const e=src[t]; m[t]={status:e.status,note:e.note,at:e.at,by:e.by,periph:Object.assign(blankPeriph(),e.periph)}; } return m; },
+  async getEntries(q){ const o=lsInit(); const src=o.entries[q]||{}; const m={}; for(const t in src){ const e=src[t]; m[t]={status:e.status,note:e.note,at:e.at,by:e.by,periph:Object.assign(blankPeriph(),e.periph),extra:normExtra(e.extra)}; } return m; },
   async putEntry(q,tag,e){ const o=lsInit(); o.entries[q]=o.entries[q]||{}; o.entries[q][tag]=e; lsWrite(o); },
-  async allEntries(){ const o=lsInit(); const out=[]; for(const q in o.entries) for(const tag in o.entries[q]){ const e=o.entries[q][tag]; out.push({quarter:q,tag,status:e.status,note:e.note,checked_at:e.at,checked_by:e.by,charger:e.periph.charger,hub:e.periph.hub,headset:e.periph.headset,mouse:e.periph.mouse}); } return out; },
+  async allEntries(){ const o=lsInit(); const out=[]; for(const q in o.entries) for(const tag in o.entries[q]){ const e=o.entries[q][tag]; out.push({quarter:q,tag,status:e.status,note:e.note,checked_at:e.at,checked_by:e.by,charger:e.periph.charger,hub:e.periph.hub,headset:e.periph.headset,mouse:e.periph.mouse,extra:normExtra(e.extra)}); } return out; },
   async allSpares(){ return lsInit().spares.slice(); },
   async addSpare(s){ const o=lsInit(); const id=(o.spares.reduce((m,x)=>Math.max(m,x.id),0)||0)+1; o.spares.push(Object.assign({id},s)); lsWrite(o); return id; },
   async updateSpare(id,patch){ const o=lsInit(); const i=o.spares.findIndex(x=>x.id===id); if(i>=0){ o.spares[i]=Object.assign(o.spares[i],patch); lsWrite(o); } },
@@ -131,11 +133,15 @@ const localStore = {
 const supaStore = {
   live:true,
   async allAssets(){ const {data,error}=await sb.from("assets").select("*").order("tag"); if(error)throw error; return (data||[]).map(fromDb); },
-  async putAsset(a){ const {error}=await sb.from("assets").upsert(toDb(a),{onConflict:"tag"}); if(error)throw error; },
+  async putAsset(a){ const payload=toDb(a); let {error}=await sb.from("assets").upsert(payload,{onConflict:"tag"});
+    if(error && /accessories/.test(error.message||"")){ delete payload.accessories; ({error}=await sb.from("assets").upsert(payload,{onConflict:"tag"})); }
+    if(error)throw error; },
   async delAsset(tag){ const {error}=await sb.from("assets").delete().eq("tag",tag); if(error)throw error; },
   async getHistory(tag){ const {data,error}=await sb.from("asset_history").select("*").eq("tag",tag).order("changed_at",{ascending:false}).limit(20); if(error)throw error; return data||[]; },
   async getEntries(q){ const {data,error}=await sb.from("audit_entries").select("*").eq("quarter",q); if(error)throw error; const m={}; (data||[]).forEach(r=>{ m[r.tag]=entryFromDb(r); }); return m; },
-  async putEntry(q,tag,e){ const {error}=await sb.from("audit_entries").upsert({quarter:q,tag,status:e.status,note:e.note,checked_at:e.at,checked_by:e.by,charger:e.periph.charger,hub:e.periph.hub,headset:e.periph.headset,mouse:e.periph.mouse},{onConflict:"quarter,tag"}); if(error)throw error; },
+  async putEntry(q,tag,e){ const base={quarter:q,tag,status:e.status,note:e.note,checked_at:e.at,checked_by:e.by,charger:e.periph.charger,hub:e.periph.hub,headset:e.periph.headset,mouse:e.periph.mouse}; let {error}=await sb.from("audit_entries").upsert(Object.assign({extra:normExtra(e.extra)},base),{onConflict:"quarter,tag"});
+    if(error && /extra/.test(error.message||"")){ ({error}=await sb.from("audit_entries").upsert(base,{onConflict:"quarter,tag"})); }
+    if(error)throw error; },
   async allEntries(){ const {data,error}=await sb.from("audit_entries").select("*"); if(error)throw error; return data||[]; },
   async allSpares(){ const {data,error}=await sb.from("spares").select("*").order("category").order("item"); if(error)throw error; return (data||[]).map(spareFromDb); },
   async addSpare(s){ const {data,error}=await sb.from("spares").insert({item:s.item,category:s.category,qty:s.qty,min_qty:s.min_qty,note:s.note}).select("id").single(); if(error)throw error; return data&&data.id; },
@@ -183,12 +189,13 @@ function setSaved(txt){ $("#savedText").textContent=txt; }
 function setNum(el,val){ if(el) el.textContent=val; }
 
 /* --------------------------- audit entry access ---------------------------- */
-function entry(tag){ const e=state.entries[tag]; if(!e) return {status:"pending",note:"",at:null,by:"",periph:blankPeriph()}; if(!e.periph) e.periph=blankPeriph(); return e; }
+function entry(tag){ const e=state.entries[tag]; if(!e) return {status:"pending",note:"",at:null,by:"",periph:blankPeriph(),extra:{}}; if(!e.periph) e.periph=blankPeriph(); if(!e.extra) e.extra={}; return e; }
 async function loadEntries(){ try{ state.entries=await store.getEntries(state.quarter); }catch(e){ state.entries={}; toast("Couldn't load check: "+e.message,true); } }
 async function saveEntry(tag,patch){
-  const cur=state.entries[tag]||{status:"pending",note:"",at:null,by:"",periph:blankPeriph()};
+  const cur=state.entries[tag]||{status:"pending",note:"",at:null,by:"",periph:blankPeriph(),extra:{}};
   const e=Object.assign({},cur,patch,{at:new Date().toISOString(),by:state.auditor});
   if(!e.periph) e.periph=blankPeriph();
+  if(!e.extra) e.extra={};
   state.entries[tag]=e;
   try{ await store.putEntry(state.quarter,tag,e); setSaved("Saved "+new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})); }
   catch(err){ toast("Save failed: "+err.message,true); }
@@ -235,6 +242,7 @@ const REPL='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-wi
 const NOTE='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v11l-4 4H4z"/><path d="M16 19v-4h4"/></svg>';
 const REASSIGN='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"/><path d="M3 12V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 12v3a3 3 0 0 1-3 3H3"/></svg>';
 const EDIT='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+const PLUS='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
 
 const ST={
   present:{l:"Present",c:"st-present",i:CHECK,attn:false},
@@ -305,8 +313,14 @@ function rowHTML(a){
       (a.reassignedFrom?'<div class="reassigned">'+REASSIGN+'Reassigned from '+esc(a.reassignedFrom)+'</div>':'');
   const spec=a.type==="infra"?esc(a.variant):esc(a.spec)+" · "+esc(a.chip);
   const cond=["present","damaged","missing","replace"].map(c=>'<button class="cond-btn c-'+c+'" data-cond="'+c+'" aria-pressed="'+(e.status===c)+'" title="'+ST[c].l+'" aria-label="'+ST[c].l+' — '+esc(a.tag)+'">'+ST[c].i+'</button>').join("");
-  const pchips = isLap ? PERIPH.map(p=>'<button class="pchip" data-p="'+p[0]+'" aria-pressed="'+(!!e.periph[p[0]])+'"><span class="pcheck">'+CHECK+'</span>'+esc(p[1])+'</button>').join("") : '<span class="periph-na">No accessories tracked for this item.</span>';
-  const psum = (!state.auditMode && isLap && e.status!=="pending") ? '<div class="periph-sum">'+PERIPH.map(p=>'<span class="'+(e.periph[p[0]]?"yes":"no")+'">'+(e.periph[p[0]]?CHECK:XMARK)+esc(p[1])+'</span>').join("")+'</div>' : "";
+  const accs = Array.isArray(a.accessories)?a.accessories:[];
+  const defChips = isLap ? PERIPH.map(p=>'<button class="pchip" data-p="'+p[0]+'" aria-pressed="'+(!!e.periph[p[0]])+'"><span class="pcheck">'+CHECK+'</span>'+esc(p[1])+'</button>').join("") : "";
+  const custChips = accs.map(name=>'<button class="pchip pchip-cust" data-acc="'+esc(name)+'" aria-pressed="'+(!!e.extra[name])+'"><span class="pcheck">'+CHECK+'</span>'+esc(name)+'<span class="pacc-del" data-del-acc="'+esc(name)+'" role="button" tabindex="0" aria-label="Remove '+esc(name)+'" title="Remove accessory">×</span></button>').join("");
+  const addChip = '<button class="pchip pchip-add" data-act="add-acc" title="Add an accessory for this person">'+PLUS+'Accessory</button>';
+  const naHint = (!isLap && !accs.length) ? '<span class="periph-na">No standard accessories for this item.</span>' : "";
+  const pchips = defChips + custChips + naHint + addChip;
+  const sumItems = (isLap?PERIPH.map(p=>[p[1],!!e.periph[p[0]]]):[]).concat(accs.map(name=>[name,!!e.extra[name]]));
+  const psum = (!state.auditMode && sumItems.length && e.status!=="pending") ? '<div class="periph-sum">'+sumItems.map(it=>'<span class="'+(it[1]?"yes":"no")+'">'+(it[1]?CHECK:XMARK)+esc(it[0])+'</span>').join("")+'</div>' : "";
   const noteBadge=(!state.auditMode && e.note)?'<div class="note-badge">'+NOTE+'<span>'+esc(e.note)+'</span></div>':"";
   return '<div class="row '+EDGE[e.status]+'" data-tag="'+esc(a.tag)+'">'+
     '<div class="tag" title="Asset tag"><span class="sheen"></span><span class="tag-t">'+esc(a.tag)+'</span></div>'+
@@ -788,6 +802,13 @@ function addNewHireKit(){
 /* --------------------------------- views ----------------------------------- */
 function renderView(){ if(state.view==="spares") renderSpares(); else if(state.view==="invoices") renderInvoices(); else if(state.view==="procurement") renderProcurement(); else renderRegister(); }
 function renderAll(){ renderStats(); renderView(); }
+/* True while the user is typing in a field (note box, search, a modal input). */
+function isEditingField(){ const el=document.activeElement; return !!el && (el.tagName==="TEXTAREA" || el.tagName==="INPUT"); }
+/* Realtime broadcasts our own writes back to us. Rebuilding the list on that
+   echo while someone is mid-note destroys the textarea they're typing in (cursor
+   jump / lag), so refresh only the lightweight stats while a field is focused —
+   state is already current, and the next real render picks up the rest. */
+function renderLive(){ if(isEditingField()){ renderStats(); return; } renderAll(); }
 const VIEW_META={
   register:{title:"Register",sub:"Assigned equipment",search:"Search tag, person, device…"},
   spares:{title:"Spares & stock",sub:"Unassigned inventory",search:"Search spares…"},
@@ -835,8 +856,15 @@ function onRegisterClick(ev){
   const cb=ev.target.closest(".cond-btn");
   if(cb){ const tag=cb.closest(".row").dataset.tag; const c=cb.dataset.cond; const e=entry(tag); const ns=e.status===c?"pending":c;
     saveEntry(tag,{status:ns}).then(()=>{ refreshRow(tag); renderStats(); }); return; }
+  const del=ev.target.closest(".pacc-del");
+  if(del){ ev.stopPropagation(); removeAccessory(del.closest(".row").dataset.tag,del.dataset.delAcc); return; }
+  const add=ev.target.closest(".pchip-add");
+  if(add){ promptAddAccessory(add.closest(".row").dataset.tag); return; }
   const pc=ev.target.closest(".pchip");
-  if(pc){ const tag=pc.closest(".row").dataset.tag; const p=pc.dataset.p; const e=entry(tag); const np=Object.assign(blankPeriph(),e.periph); np[p]=!np[p]; pc.setAttribute("aria-pressed",np[p]); saveEntry(tag,{periph:np}); return; }
+  if(pc){ const tag=pc.closest(".row").dataset.tag; const e=entry(tag);
+    if(pc.dataset.p){ const np=Object.assign(blankPeriph(),e.periph); np[pc.dataset.p]=!np[pc.dataset.p]; pc.setAttribute("aria-pressed",np[pc.dataset.p]); saveEntry(tag,{periph:np}); return; }
+    if(pc.dataset.acc){ const name=pc.dataset.acc; const ex=Object.assign({},e.extra); ex[name]=!ex[name]; pc.setAttribute("aria-pressed",ex[name]); saveEntry(tag,{extra:ex}); return; }
+  }
   const ab=ev.target.closest(".aud-btn");
   if(ab && ab.dataset.act==="edit"){ openAssetModal(state.assets.find(a=>a.tag===ab.closest(".row").dataset.tag)); }
 }
@@ -898,13 +926,62 @@ function openAuthModal(){
   openModal("Sign in",
     '<p class="hint">Sign in to load and edit the live Mauritius register and stock.</p>'+
     '<div class="field"><label>Email</label><input id="au_email" type="email" autocomplete="username" placeholder="you@bspot.com"></div>'+
-    '<div class="field"><label>Password</label><input id="au_pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>',
+    '<div class="field"><label>Password</label><input id="au_pass" type="password" autocomplete="current-password" placeholder="••••••••"></div>'+
+    '<p class="hint" style="margin-top:2px"><a href="#" id="au_forgot" style="color:var(--accent)">Forgot your password?</a></p>',
     '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSignin">Sign in</button>',true);
   $("#au_email").focus();
   const submit=async()=>{ const email=$("#au_email").value.trim(), password=$("#au_pass").value; if(!email||!password){ toast("Enter your email and password",true); return; }
     $("#mSignin").disabled=true; const {error}=await sb.auth.signInWithPassword({email,password}); $("#mSignin").disabled=false;
     if(error){ toast(error.message,true); return; } closeModal(); };
   $("#mSignin").onclick=submit; $("#au_pass").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); }); $("#mCancel").onclick=closeModal;
+  $("#au_forgot").onclick=async(e)=>{ e.preventDefault(); const email=$("#au_email").value.trim(); if(!email){ toast("Enter your email first, then tap “Forgot your password?”",true); $("#au_email").focus(); return; }
+    const { error }=await sb.auth.resetPasswordForEmail(email,{ redirectTo: location.origin+location.pathname }); if(error){ toast(error.message,true); return; }
+    toast("Reset link sent to "+email+" — open it to set a new password."); };
+}
+
+// Shown when the user arrives via a password-reset link (Supabase fires a
+// PASSWORD_RECOVERY event). They pick a new password; updateUser applies it to
+// the recovery session, after which they're signed in normally.
+function openResetModal(){
+  openModal("Set a new password",
+    '<p class="hint">You followed a password-reset link. Choose a new password to finish.</p>'+
+    '<div class="field"><label>New password</label><input id="rp_pass" type="password" autocomplete="new-password" placeholder="At least 8 characters"></div>'+
+    '<div class="field"><label>Confirm new password</label><input id="rp_pass2" type="password" autocomplete="new-password" placeholder="Re-type it"></div>',
+    '<button class="btn btn-primary" id="mReset" style="margin-left:auto">Update password</button>',true);
+  $("#rp_pass").focus();
+  const submit=async()=>{ const p1=$("#rp_pass").value, p2=$("#rp_pass2").value;
+    if(p1.length<8){ toast("Use at least 8 characters",true); return; }
+    if(p1!==p2){ toast("The two passwords don’t match",true); return; }
+    $("#mReset").disabled=true; const { error }=await sb.auth.updateUser({ password:p1 }); $("#mReset").disabled=false;
+    if(error){ toast(error.message,true); return; }
+    // strip the recovery token from the URL so a refresh doesn't re-trigger it
+    history.replaceState(null,"",location.origin+location.pathname); closeModal(); toast("Password updated — you’re signed in."); };
+  $("#mReset").onclick=submit; $("#rp_pass2").addEventListener("keydown",e=>{ if(e.key==="Enter") submit(); });
+}
+function promptAddAccessory(tag){
+  const a=state.assets.find(x=>x.tag===tag); if(!a) return;
+  const who=a.assignee||a.tag;
+  openModal("Add accessory for "+who,
+    '<div class="field"><label>Accessory</label><input id="inAcc" placeholder="e.g. Keyboard, Docking station, Monitor, Pen"></div><p class="hint">Added to <strong>'+esc(who)+'</strong> only, and tracked as a tick in every quarterly check from now on.</p>',
+    '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Add</button>',true);
+  const inp=$("#inAcc"); inp.focus();
+  const save=async()=>{ const name=inp.value.trim(); if(!name){ toast("Enter an accessory name",true); return; }
+    const accs=(Array.isArray(a.accessories)?a.accessories:[]).slice();
+    if(accs.some(x=>x.toLowerCase()===name.toLowerCase())){ toast("Already tracked for "+who,true); return; }
+    accs.push(name); const prev=a.accessories; a.accessories=accs;
+    $("#mSave").disabled=true;
+    try{ await store.putAsset(a); }catch(err){ a.accessories=prev; $("#mSave").disabled=false; toast("Save failed: "+err.message,true); return; }
+    closeModal(); refreshRow(tag); renderStats(); setSaved("Added "+name+" for "+who); };
+  $("#mSave").onclick=save; $("#mCancel").onclick=closeModal;
+  inp.addEventListener("keydown",e=>{ if(e.key==="Enter") save(); });
+}
+async function removeAccessory(tag,name){
+  const a=state.assets.find(x=>x.tag===tag); if(!a) return;
+  const prev=(Array.isArray(a.accessories)?a.accessories:[]).slice();
+  a.accessories=prev.filter(x=>x!==name);
+  try{ await store.putAsset(a); }catch(err){ a.accessories=prev; toast("Remove failed: "+err.message,true); return; }
+  const e=entry(tag); if(e.extra && (name in e.extra)){ const ex=Object.assign({},e.extra); delete ex[name]; saveEntry(tag,{extra:ex}); }
+  refreshRow(tag); renderStats(); setSaved("Removed "+name);
 }
 function askAuditor(){
   openModal("Who's running this check?",'<div class="field"><label>Checked by</label><input id="inAuditor" placeholder="e.g. Yuvan Ramchurn" value="'+esc(state.auditor)+'"></div><p class="hint">Recorded against each item you check, and shown on the report.</p>',
@@ -914,7 +991,7 @@ function askAuditor(){
 function openAssetModal(a){
   if(!store.live){ toast("Sign in to edit the live register",true); openAuthModal(); return; }
   const isNew=!a;
-  a=a||{tag:"",assignee:"",reassignedFrom:"",type:"laptop",kind:"apple",model:"",variant:"",spec:"",chip:"M4",serial:"",retired:false};
+  a=a||{tag:"",assignee:"",reassignedFrom:"",type:"laptop",kind:"apple",model:"",variant:"",spec:"",chip:"M4",serial:"",retired:false,accessories:[]};
   const typeOpts=TYPE_ORDER.map(t=>'<option value="'+t+'"'+(a.type===t?" selected":"")+'>'+TYPES[t].label+'</option>').join("");
   const kindOpts=Object.keys(KINDS).map(k=>'<option value="'+k+'"'+(a.kind===k?" selected":"")+'>'+KINDS[k]+'</option>').join("");
   openModal(isNew?"Add asset":"Edit "+a.tag,
@@ -941,7 +1018,7 @@ function openAssetModal(a){
   $("#mSave").onclick=async()=>{
     const tag=$("#f_tag").value.trim().toUpperCase(); if(!tag){ toast("An asset tag is required",true); return; }
     if(isNew && state.assets.some(x=>x.tag===tag)){ toast("Tag "+tag+" already exists",true); return; }
-    const obj={ tag, serial:$("#f_serial").value.trim(), type:$("#f_type").value, kind:$("#f_kind").value, assignee:$("#f_assignee").value.trim(), reassignedFrom:$("#f_reassigned").value.trim(), model:$("#f_model").value.trim(), variant:$("#f_variant").value.trim(), spec:$("#f_spec").value.trim(), chip:$("#f_chip").value.trim()||"—", retired:false };
+    const obj={ tag, serial:$("#f_serial").value.trim(), type:$("#f_type").value, kind:$("#f_kind").value, assignee:$("#f_assignee").value.trim(), reassignedFrom:$("#f_reassigned").value.trim(), model:$("#f_model").value.trim(), variant:$("#f_variant").value.trim(), spec:$("#f_spec").value.trim(), chip:$("#f_chip").value.trim()||"—", retired:false, accessories:(Array.isArray(a.accessories)?a.accessories:[]) };
     try{ await store.putAsset(obj); const i=state.assets.findIndex(x=>x.tag===tag); if(i>=0)state.assets[i]=obj; else state.assets.push(obj); closeModal(); renderAll(); toast(isNew?tag+" added":tag+" updated"); }catch(e){ toast(e.message,true); }
   };
   $("#f_tag").focus();
@@ -969,12 +1046,12 @@ function openSpareModal(s){
 }
 
 /* --------------------------------- report ---------------------------------- */
-function periphMissing(a){ const e=entry(a.tag); return PERIPH.filter(p=>!e.periph[p[0]]).map(p=>p[1]); }
+function periphMissing(a){ const e=entry(a.tag); const def=(a.type==="laptop"?PERIPH.filter(p=>!e.periph[p[0]]).map(p=>p[1]):[]); const cust=(Array.isArray(a.accessories)?a.accessories:[]).filter(name=>!e.extra[name]); return def.concat(cust); }
 function buildReport(){
   const s=computeStats(); const act=registerAssets(); const by=st=>act.filter(a=>entry(a.tag).status===st);
   const damaged=by("damaged"), missing=by("missing"), replace=by("replace"), pending=by("pending");
   const reassigned=act.filter(a=>a.reassignedFrom);
-  const gaps=act.filter(a=>a.type==="laptop"&&entry(a.tag).status!=="pending"&&periphMissing(a).length);
+  const gaps=act.filter(a=>(a.type==="laptop"||(Array.isArray(a.accessories)&&a.accessories.length))&&entry(a.tag).status!=="pending"&&periphMissing(a).length);
   const L=[];
   L.push("MAURITIUS ASSET REGISTER — QUARTERLY EQUIPMENT CHECK");
   L.push(qPretty(state.quarter)+"  ·  "+(CFG.OFFICE||"Ebène office"));
@@ -987,10 +1064,10 @@ function buildReport(){
   L.push("  Missing / lost .............. "+missing.length);
   L.push("  Needs replacement ........... "+replace.length);
   L.push("  Not yet checked ............. "+pending.length);
-  L.push("  Laptops missing accessories . "+gaps.length); L.push("");
+  L.push("  Missing accessories ......... "+gaps.length); L.push("");
   const block=(t,arr)=>{ if(!arr.length)return; L.push(t+" ("+arr.length+")"); arr.forEach(a=>{ const e=entry(a.tag); L.push("  "+a.tag+"  "+a.assignee+"  ·  "+a.model+(e.note?"\n      Note: "+e.note:"")); }); L.push(""); };
   block("MISSING / LOST",missing); block("DAMAGED / NEEDS REPAIR",damaged); block("NEEDS REPLACEMENT",replace);
-  if(gaps.length){ L.push("LAPTOPS MISSING ACCESSORIES ("+gaps.length+")"); gaps.forEach(a=>L.push("  "+a.tag+"  "+a.assignee+"  — missing: "+periphMissing(a).join(", "))); L.push(""); }
+  if(gaps.length){ L.push("MISSING ACCESSORIES ("+gaps.length+")"); gaps.forEach(a=>L.push("  "+a.tag+"  "+a.assignee+"  — missing: "+periphMissing(a).join(", "))); L.push(""); }
   if(reassigned.length){ L.push("REASSIGNMENTS TO CONFIRM ("+reassigned.length+")"); reassigned.forEach(a=>L.push("  "+a.tag+"  now "+a.assignee+"  (from "+a.reassignedFrom+")")); L.push(""); }
   if(pending.length){ L.push("NOT YET CHECKED ("+pending.length+")"); L.push("  "+pending.map(a=>a.tag).join(", ")); L.push(""); }
   const mon=computeMonitors();
@@ -1008,10 +1085,11 @@ function buildReport(){
   return L.join("\n");
 }
 function buildCSV(){
-  const head=["Asset Tag","Type","Assignee","Reassigned From","Make/Model","Variant","Spec","Chip","Serial/ID","Condition","Charger","USB-C Hub","Headset","Mouse","Note","Checked At","Checked By"];
+  const head=["Asset Tag","Type","Assignee","Reassigned From","Make/Model","Variant","Spec","Chip","Serial/ID","Condition","Charger","USB-C Hub","Headset","Mouse","Custom Accessories","Note","Checked At","Checked By"];
   const yn=b=>b?"Yes":"No";
   const rows=activeAssets().map(a=>{ const e=entry(a.tag); const lap=a.type==="laptop";
-    return [a.tag,a.type,a.assignee,a.reassignedFrom,a.model,a.variant,a.spec,a.chip,a.serial,(ST[e.status]||ST.pending).l,lap?yn(e.periph.charger):"—",lap?yn(e.periph.hub):"—",lap?yn(e.periph.headset):"—",lap?yn(e.periph.mouse):"—",e.note||"",e.at?new Date(e.at).toLocaleString("en-GB"):"",e.by||""]; });
+    const custom=(Array.isArray(a.accessories)?a.accessories:[]).map(name=>name+": "+yn(!!e.extra[name])).join("; ");
+    return [a.tag,a.type,a.assignee,a.reassignedFrom,a.model,a.variant,a.spec,a.chip,a.serial,(ST[e.status]||ST.pending).l,lap?yn(e.periph.charger):"—",lap?yn(e.periph.hub):"—",lap?yn(e.periph.headset):"—",lap?yn(e.periph.mouse):"—",custom,e.note||"",e.at?new Date(e.at).toLocaleString("en-GB"):"",e.by||""]; });
   return [head].concat(rows).map(r=>r.map(c=>{ c=String(c==null?"":c); return /[",\n]/.test(c)?'"'+c.replace(/"/g,'""')+'"':c; }).join(",")).join("\n");
 }
 function download(filename,data,mime){
@@ -1069,7 +1147,7 @@ async function onImportFile(ev){
     const data=JSON.parse(await file.text());
     if(data.app!=="mur-asset-register"||!Array.isArray(data.assets)) throw new Error("Not a register backup");
     for(const a of data.assets) await store.putAsset(a);
-    if(Array.isArray(data.entries)) for(const r of data.entries) await store.putEntry(r.quarter,r.tag,{status:r.status,note:r.note,at:r.checked_at,by:r.checked_by,periph:{charger:!!r.charger,hub:!!r.hub,headset:!!r.headset,mouse:!!r.mouse}});
+    if(Array.isArray(data.entries)) for(const r of data.entries) await store.putEntry(r.quarter,r.tag,{status:r.status,note:r.note,at:r.checked_at,by:r.checked_by,periph:{charger:!!r.charger,hub:!!r.hub,headset:!!r.headset,mouse:!!r.mouse},extra:normExtra(r.extra)});
     if(Array.isArray(data.spares)) for(const sp of data.spares){ try{ await store.addSpare(sp); }catch(e){} }
     if(Array.isArray(data.invoices)) for(const iv of data.invoices){ try{ const c=Object.assign({},iv); delete c.id; await store.addInvoice(c); }catch(e){} }
     if(Array.isArray(data.procurement)) for(const pp of data.procurement){ try{ const c=Object.assign({},pp); delete c.id; await store.addPurchase(c); }catch(e){} }
@@ -1105,11 +1183,11 @@ async function onSignedOut(){ state.user=null; state.auditMode=false; document.b
 let rtChannel=null;
 function subscribeRealtime(){ if(!sb || rtChannel) return;
   try{ rtChannel=sb.channel("mur-live")
-      .on("postgres_changes",{event:"*",schema:"public",table:"assets"},async()=>{ state.assets=await store.allAssets(); renderAll(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"audit_entries"},async()=>{ await loadEntries(); renderAll(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"spares"},async()=>{ state.spares=await store.allSpares(); renderAll(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"invoices"},async()=>{ state.invoices=await store.allInvoices(); renderAll(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"procurement"},async()=>{ state.procurement=await store.allProcurement(); renderAll(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"assets"},async()=>{ state.assets=await store.allAssets(); renderLive(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"audit_entries"},async()=>{ await loadEntries(); renderLive(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"spares"},async()=>{ state.spares=await store.allSpares(); renderLive(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"invoices"},async()=>{ state.invoices=await store.allInvoices(); renderLive(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"procurement"},async()=>{ state.procurement=await store.allProcurement(); renderLive(); })
       .subscribe(); }catch(e){}
 }
 
@@ -1165,7 +1243,7 @@ async function init(){
 
   setView("register");
   if(configured && sb){
-    sb.auth.onAuthStateChange((event,session)=>{ if(session&&session.user){ onSignedIn(session); } else { onSignedOut(); } });
+    sb.auth.onAuthStateChange((event,session)=>{ if(event==="PASSWORD_RECOVERY"){ openResetModal(); return; } if(session&&session.user){ onSignedIn(session); } else { onSignedOut(); } });
     const {data}=await sb.auth.getSession();
     if(data && data.session){ await onSignedIn(data.session); } else { await useStore(localStore); }
   } else { await useStore(localStore); }
