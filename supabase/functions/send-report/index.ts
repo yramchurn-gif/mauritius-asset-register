@@ -49,7 +49,12 @@ Deno.serve(async (req) => {
     .map((s) => String(s).trim()).filter(Boolean);
   const subject = String(p.subject || "Mauritius Quarterly Equipment Check");
   const text = String(p.text || "");
-  if (!to.length) return json({ error: "no recipient" }, 400);
+  // slack_only: post the digest to the Slack channel (MUR Log) without emailing.
+  // Used by the app's "Finish check" auto-post so a paused/finished check logs to
+  // Slack without sending an email every time.
+  const slackOnly = p.slack_only === true || p.slackOnly === true;
+  if (!to.length && !slackOnly) return json({ error: "no recipient" }, 400);
+  if (slackOnly && !slackOn) return json({ error: "slack not configured" }, 400);
 
   const html = `<pre style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;color:#1c1d17">${
     text.replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]!))
@@ -77,7 +82,7 @@ Deno.serve(async (req) => {
   }
 
   // Email (Resend) with the CSV attached.
-  if (resendKey) {
+  if (resendKey && !slackOnly && to.length) {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },

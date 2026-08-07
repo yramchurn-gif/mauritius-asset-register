@@ -303,6 +303,7 @@ function renderStats(){
   $("#navSparesCount").textContent=state.spares.length||"";
   $("#navInvoicesCount").textContent=state.invoices.length||"";
   { const openp=state.procurement.filter(p=>p.status!=="received").length; $("#navProcurementCount").textContent=openp||""; }
+  renderNudge();
 }
 
 /* --------------------------------- register -------------------------------- */
@@ -850,6 +851,37 @@ function setView(v){
 }
 
 /* ------------------------------- audit mode -------------------------------- */
+async function finishCheck(){
+  setAuditMode(false);
+  if(!store.live){ toast("Check paused — progress saved (sign in to log to Slack)"); return; }
+  const btn=$("#btnAuditDone");
+  try{
+    const {data,error}=await sb.functions.invoke("send-report",{body:{
+      to:[state.gerardEmail], slack_only:true,
+      subject:"MUR Equipment Check — "+qPretty(state.quarter),
+      text:buildCheckSummary()
+    }});
+    if(error) throw error;
+    if(data&&data.sent&&data.sent.slack) toast("Check finished — summary posted to MUR Log");
+    else toast("Check finished — progress saved (Slack not configured server-side)");
+  }catch(e){ toast("Check finished — Slack post failed: "+(e.message||e),true); }
+}
+/* Gentle reminder if the live quarter's check is still unfinished past its
+   halfway point. Dismissible per quarter; only shows on the register view. */
+function renderNudge(){
+  const el=$("#checkNudge"); if(!el) return;
+  let show=false, pending=0, pct=100;
+  if(store.live && !state.auditMode && state.view==="register" && state.quarter===currentQuarter()
+     && localStorage.getItem("mur_nudge_dismissed")!==state.quarter){
+    const now=new Date(); const qStart=new Date(now.getFullYear(),Math.floor(now.getMonth()/3)*3,1);
+    const daysIn=(now-qStart)/86400000;
+    const s=computeStats(); pct=s.total?Math.round(s.checked/s.total*100):100; pending=s.total-s.checked;
+    if(daysIn>=45 && pct<100 && pending>0) show=true;
+  }
+  if(!show){ el.style.display="none"; return; }
+  $("#nudgeText").innerHTML="<b>"+qPretty(state.quarter)+" check is "+pct+"% done.</b> "+pending+" item"+(pending>1?"s":"")+" still unchecked — the quarter is more than half over. A good time to wrap it up.";
+  el.style.display="flex";
+}
 async function bulkMarkPresent(){
   if(!state.auditMode){ toast("Start a check first",true); return; }
   const shown=registerAssets().filter(passFilter);
@@ -1108,6 +1140,20 @@ function buildReport(){
   L.push("Full line-by-line register attached as CSV.");
   return L.join("\n");
 }
+/* Short digest for the Slack (MUR Log) auto-post on "Finish check". */
+function buildCheckSummary(){
+  const s=computeStats(); const act=registerAssets(); const by=st=>act.filter(a=>entry(a.tag).status===st);
+  const damaged=by("damaged"), missing=by("missing"), replace=by("replace");
+  const pct=Math.round(s.checked/(s.total||1)*100);
+  const L=[];
+  L.push(qPretty(state.quarter)+" equipment check · "+(CFG.OFFICE||"Ebène office"));
+  L.push("Progress: "+s.checked+"/"+s.total+" checked ("+pct+"%)   ·   by "+(state.auditor||"—")+"   ·   "+new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}));
+  L.push("Present "+s.present+"  |  Damaged "+damaged.length+"  |  Missing "+missing.length+"  |  Replace "+replace.length+"  |  Pending "+s.pending);
+  const flag=damaged.concat(missing,replace);
+  if(flag.length){ L.push(""); L.push("Needs attention ("+flag.length+"):"); flag.forEach(a=>{ const e=entry(a.tag); L.push("• "+a.tag+"  "+a.assignee+" — "+((ST[e.status]||{}).l||e.status)+(e.note?"  ("+e.note+")":"")); }); }
+  else L.push("No flagged items 🎉");
+  return L.join("\n");
+}
 function buildCSV(){
   const head=["Asset Tag","Type","Assignee","Reassigned From","Make/Model","Variant","Spec","Chip","Serial/ID","Condition","Charger","USB-C Hub","Headset","Mouse","Custom Accessories","Note","Checked At","Checked By"];
   const yn=b=>b?"Yes":"No";
@@ -1248,8 +1294,10 @@ async function init(){
   $("#filterType").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.filter=b.dataset.f; $$("#filterType button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderStats(); renderRegister(); updateRegisterSub(); });
   $("#groupBy").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.group=b.dataset.g; $$("#groupBy button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderRegister(); });
   $("#btnAudit").addEventListener("click",()=>setAuditMode(!state.auditMode));
-  $("#btnAuditDone").addEventListener("click",()=>{ setAuditMode(false); toast("Check paused — progress saved"); });
+  $("#btnAuditDone").addEventListener("click",finishCheck);
   $("#btnMarkPresent").addEventListener("click",bulkMarkPresent);
+  $("#nudgeStart").addEventListener("click",()=>setAuditMode(true));
+  $("#nudgeDismiss").addEventListener("click",()=>{ localStorage.setItem("mur_nudge_dismissed",state.quarter); $("#checkNudge").style.display="none"; });
   $("#btnReport").addEventListener("click",openReportModal);
   $("#btnAdd").addEventListener("click",()=>openAssetModal(null));
   $("#btnAddSpare").addEventListener("click",()=>openSpareModal(null));

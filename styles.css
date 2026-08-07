@@ -160,6 +160,7 @@ button{font-family:inherit; cursor:pointer;}
 .mode-banner .b-actions{margin-left:auto;}
 .mode-banner.sample{background:var(--warn-soft); border-color:var(--warn-line); color:var(--warn);}
 .mode-banner.audit{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-2);}
+.mode-banner.nudge{background:var(--warn-soft); border-color:var(--warn-line); color:var(--warn);}
 :root[data-theme="dark"] .mode-banner.audit{color:var(--accent-2);}
 .mode-banner b{color:inherit; font-weight:700;}
 .mode-banner .b-actions{display:flex; gap:8px; align-items:center;}
