@@ -152,6 +152,11 @@
           <div class="audit-progress" id="auditProgress" title="Items checked this quarter"><div class="ap-bar"><i id="apFill"></i></div><span id="apText">0 / 0</span></div>
           <div class="b-actions"><button class="btn btn-sm" id="btnMarkPresent" title="Mark every not-yet-checked item currently shown as present">Mark shown present</button><button class="btn btn-sm" id="btnAuditDone">Finish check</button></div>
         </div>
+        <div class="mode-banner nudge" id="checkNudge" role="status" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <div id="nudgeText"></div>
+          <div class="b-actions"><button class="btn btn-sm" id="nudgeStart">Start check</button><button class="btn btn-sm" id="nudgeDismiss">Dismiss</button></div>
+        </div>
 
         <div class="toolbar">
           <div class="segmented" id="filterType" role="group" aria-label="Filter by type">
