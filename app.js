@@ -298,6 +298,7 @@ function renderStats(){
   setNum($("#pDone"),s.present); $("#pTotal").textContent=s.total; setNum($("#pFlags"),s.issues);
   $("#lgOk").textContent=s.present; $("#lgBad").textContent=s.issues; $("#lgPend").textContent=s.pending;
   const t=s.total||1; $("#mOk").style.width=(s.present/t*100)+"%"; $("#mBad").style.width=(s.issues/t*100)+"%";
+  { const pct=Math.round(s.checked/t*100); const fill=$("#apFill"), txt=$("#apText"); if(fill) fill.style.width=pct+"%"; if(txt) txt.textContent=s.checked+" / "+s.total+" checked · "+pct+"%"; }
   $("#navRegisterCount").textContent=s.total;
   $("#navSparesCount").textContent=state.spares.length||"";
   $("#navInvoicesCount").textContent=state.invoices.length||"";
@@ -809,6 +810,12 @@ function isEditingField(){ const el=document.activeElement; return !!el && (el.t
    jump / lag), so refresh only the lightweight stats while a field is focused —
    state is already current, and the next real render picks up the rest. */
 function renderLive(){ if(isEditingField()){ renderStats(); return; } renderAll(); }
+/* Coalesce a burst of realtime echoes (e.g. a bulk update fires dozens of them)
+   into a single render, and never rebuild the list while a field is focused —
+   keep re-checking every 500ms and do the full render once editing stops. */
+var _liveT=null, _liveDirty=false;
+function scheduleLiveRender(){ _liveDirty=true; clearTimeout(_liveT); _liveT=setTimeout(flushLiveRender,150); }
+function flushLiveRender(){ if(!_liveDirty) return; if(isEditingField()){ renderStats(); clearTimeout(_liveT); _liveT=setTimeout(flushLiveRender,500); return; } _liveDirty=false; renderAll(); }
 const VIEW_META={
   register:{title:"Register",sub:"Assigned equipment",search:"Search tag, person, device…"},
   spares:{title:"Spares & stock",sub:"Unassigned inventory",search:"Search spares…"},
@@ -843,6 +850,20 @@ function setView(v){
 }
 
 /* ------------------------------- audit mode -------------------------------- */
+async function bulkMarkPresent(){
+  if(!state.auditMode){ toast("Start a check first",true); return; }
+  const shown=registerAssets().filter(passFilter);
+  const targets=shown.filter(a=>entry(a.tag).status==="pending");
+  if(!targets.length){ toast("Nothing left to check in the current view"); return; }
+  if(!confirm("Mark "+targets.length+" not-yet-checked item"+(targets.length>1?"s":"")+" shown here as PRESENT?\n\nItems already flagged (damaged / missing / needs-replacement) are left untouched. Use the filters/search first to narrow the list.")) return;
+  if(!state.auditor){ askAuditor(); }
+  const btn=$("#btnMarkPresent"); if(btn) btn.disabled=true;
+  const res=await Promise.allSettled(targets.map(a=>saveEntry(a.tag,{status:"present"})));
+  if(btn) btn.disabled=false;
+  const ok=res.filter(r=>r.status==="fulfilled").length;
+  renderRegister(); renderStats();
+  toast("Marked "+ok+" of "+targets.length+" as present");
+}
 function setAuditMode(on){
   state.auditMode=on; document.body.classList.toggle("audit-on",on);
   $("#auditBtnLabel").textContent=on?"Checking "+qPretty(state.quarter)+"…":"Start "+qPretty(state.quarter)+" check";
@@ -1069,6 +1090,9 @@ function buildReport(){
   block("MISSING / LOST",missing); block("DAMAGED / NEEDS REPAIR",damaged); block("NEEDS REPLACEMENT",replace);
   if(gaps.length){ L.push("MISSING ACCESSORIES ("+gaps.length+")"); gaps.forEach(a=>L.push("  "+a.tag+"  "+a.assignee+"  — missing: "+periphMissing(a).join(", "))); L.push(""); }
   if(reassigned.length){ L.push("REASSIGNMENTS TO CONFIRM ("+reassigned.length+")"); reassigned.forEach(a=>L.push("  "+a.tag+"  now "+a.assignee+"  (from "+a.reassignedFrom+")")); L.push(""); }
+  const bySerial={}; act.forEach(a=>{ const k=(a.serial||"").trim().toLowerCase(); if(k) (bySerial[k]=bySerial[k]||[]).push(a); });
+  const dupSerials=Object.values(bySerial).filter(g=>g.length>1);
+  if(dupSerials.length){ L.push("! DATA CHECK — DUPLICATE SERIALS ("+dupSerials.length+")"); dupSerials.forEach(g=>L.push("  "+g[0].serial+"  → "+g.map(a=>a.tag+" ("+(a.assignee||"—")+")").join(", "))); L.push(""); }
   if(pending.length){ L.push("NOT YET CHECKED ("+pending.length+")"); L.push("  "+pending.map(a=>a.tag).join(", ")); L.push(""); }
   const mon=computeMonitors();
   if(mon.total || mon.spareQty){
@@ -1183,11 +1207,11 @@ async function onSignedOut(){ state.user=null; state.auditMode=false; document.b
 let rtChannel=null;
 function subscribeRealtime(){ if(!sb || rtChannel) return;
   try{ rtChannel=sb.channel("mur-live")
-      .on("postgres_changes",{event:"*",schema:"public",table:"assets"},async()=>{ state.assets=await store.allAssets(); renderLive(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"audit_entries"},async()=>{ await loadEntries(); renderLive(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"spares"},async()=>{ state.spares=await store.allSpares(); renderLive(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"invoices"},async()=>{ state.invoices=await store.allInvoices(); renderLive(); })
-      .on("postgres_changes",{event:"*",schema:"public",table:"procurement"},async()=>{ state.procurement=await store.allProcurement(); renderLive(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"assets"},async()=>{ state.assets=await store.allAssets(); scheduleLiveRender(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"audit_entries"},async()=>{ await loadEntries(); scheduleLiveRender(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"spares"},async()=>{ state.spares=await store.allSpares(); scheduleLiveRender(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"invoices"},async()=>{ state.invoices=await store.allInvoices(); scheduleLiveRender(); })
+      .on("postgres_changes",{event:"*",schema:"public",table:"procurement"},async()=>{ state.procurement=await store.allProcurement(); scheduleLiveRender(); })
       .subscribe(); }catch(e){}
 }
 
@@ -1220,11 +1244,12 @@ async function init(){
   $("#navInvoices").addEventListener("click",()=>setView("invoices"));
   $("#navProcurement").addEventListener("click",()=>setView("procurement"));
   $("#navToggle").addEventListener("click",()=>document.body.classList.toggle("nav-open"));
-  $("#search").addEventListener("input",e=>{ state.q=e.target.value; renderView(); });
+  $("#search").addEventListener("input",e=>{ state.q=e.target.value; clearTimeout(window._searchT); window._searchT=setTimeout(renderView,160); });
   $("#filterType").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.filter=b.dataset.f; $$("#filterType button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderStats(); renderRegister(); updateRegisterSub(); });
   $("#groupBy").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.group=b.dataset.g; $$("#groupBy button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderRegister(); });
   $("#btnAudit").addEventListener("click",()=>setAuditMode(!state.auditMode));
   $("#btnAuditDone").addEventListener("click",()=>{ setAuditMode(false); toast("Check paused — progress saved"); });
+  $("#btnMarkPresent").addEventListener("click",bulkMarkPresent);
   $("#btnReport").addEventListener("click",openReportModal);
   $("#btnAdd").addEventListener("click",()=>openAssetModal(null));
   $("#btnAddSpare").addEventListener("click",()=>openSpareModal(null));

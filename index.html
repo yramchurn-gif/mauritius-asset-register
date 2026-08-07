@@ -149,7 +149,8 @@
         <div class="mode-banner audit" id="auditBanner" role="status">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
           <div><b>Quarterly equipment check is on.</b> Set each item's condition and confirm its accessories — everything saves automatically.</div>
-          <div class="b-actions"><button class="btn btn-sm" id="btnAuditDone">Finish check</button></div>
+          <div class="audit-progress" id="auditProgress" title="Items checked this quarter"><div class="ap-bar"><i id="apFill"></i></div><span id="apText">0 / 0</span></div>
+          <div class="b-actions"><button class="btn btn-sm" id="btnMarkPresent" title="Mark every not-yet-checked item currently shown as present">Mark shown present</button><button class="btn btn-sm" id="btnAuditDone">Finish check</button></div>
         </div>
 
         <div class="toolbar">

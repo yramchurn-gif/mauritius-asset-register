@@ -162,6 +162,12 @@ button{font-family:inherit; cursor:pointer;}
 .mode-banner.audit{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-2);}
 :root[data-theme="dark"] .mode-banner.audit{color:var(--accent-2);}
 .mode-banner b{color:inherit; font-weight:700;}
+.mode-banner .b-actions{display:flex; gap:8px; align-items:center;}
+.audit-progress{display:flex; align-items:center; gap:9px; margin-left:16px; min-width:190px;}
+.audit-progress .ap-bar{flex:1; height:7px; border-radius:100px; background:var(--accent-soft); overflow:hidden;}
+.audit-progress .ap-bar i{display:block; height:100%; width:0; border-radius:100px; background:var(--accent); transition:width .35s ease;}
+.audit-progress span{font-family:var(--font-mono); font-size:11px; font-weight:700; white-space:nowrap; color:inherit; opacity:.9;}
+@media (max-width:720px){ .audit-progress{display:none;} }
 #auditBanner{display:none;}
 body.audit-on #auditBanner{display:flex;}
 
