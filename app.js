@@ -127,7 +127,8 @@ const localStore = {
   async updatePurchase(id,patch){ const o=lsInit(); const i=o.procurement.findIndex(x=>x.id===id); if(i>=0){ o.procurement[i]=Object.assign(o.procurement[i],patch); lsWrite(o); } },
   async delPurchase(id){ const o=lsInit(); o.procurement=o.procurement.filter(x=>x.id!==id); lsWrite(o); },
   async getSetting(k){ try{ return JSON.parse(localStorage.getItem("mur_settings")||"{}")[k]; }catch(e){ return undefined; } },
-  async setSetting(k,v){ let m={}; try{ m=JSON.parse(localStorage.getItem("mur_settings")||"{}"); }catch(e){} m[k]=v; try{ localStorage.setItem("mur_settings",JSON.stringify(m)); }catch(e){} }
+  async setSetting(k,v){ let m={}; try{ m=JSON.parse(localStorage.getItem("mur_settings")||"{}"); }catch(e){} m[k]=v; try{ localStorage.setItem("mur_settings",JSON.stringify(m)); }catch(e){} },
+  async getAdmins(){ return []; }, async addAdmin(){}, async removeAdmin(){}
 };
 
 const supaStore = {
@@ -158,7 +159,10 @@ const supaStore = {
   async updatePurchase(id,patch){ const db=Object.assign({},patch); if("needed_by" in db) db.needed_by=db.needed_by||null; delete db.id; const {error}=await sb.from("procurement").update(db).eq("id",id); if(error)throw error; },
   async delPurchase(id){ const {error}=await sb.from("procurement").delete().eq("id",id); if(error)throw error; },
   async getSetting(k){ const {data,error}=await sb.from("app_settings").select("value").eq("key",k).maybeSingle(); if(error)throw error; return data?data.value:undefined; },
-  async setSetting(k,v){ const {error}=await sb.from("app_settings").upsert({key:k,value:v,updated_at:new Date().toISOString()},{onConflict:"key"}); if(error)throw error; }
+  async setSetting(k,v){ const {error}=await sb.from("app_settings").upsert({key:k,value:v,updated_at:new Date().toISOString()},{onConflict:"key"}); if(error)throw error; },
+  async getAdmins(){ const {data,error}=await sb.from("admins").select("email,name").order("email"); if(error)throw error; return data||[]; },
+  async addAdmin(email,name){ const {error}=await sb.from("admins").upsert({email:email.toLowerCase(),name:name||"",added_by:(state.user&&state.user.email)||""},{onConflict:"email"}); if(error)throw error; },
+  async removeAdmin(email){ const {error}=await sb.from("admins").delete().eq("email",email.toLowerCase()); if(error)throw error; }
 };
 
 let store = localStore;
@@ -168,7 +172,8 @@ const state = {
   view:"register", assets:[], entries:{}, spares:[], invoices:[], procurement:[], quarter:currentQuarter(),
   filter:"all", group:"type", q:"", spareSort:"qty", auditMode:false, loading:true,
   user:null, auditor:"", kit:null, gerardEmail:CFG.REPORT_TO||"gcateau@bspot.com",
-  stockAlertTo:(CFG.STOCK_ALERT_TO&&CFG.STOCK_ALERT_TO.length)?CFG.STOCK_ALERT_TO:["yramchurn@bspot.com","rsoodarchand@bspot.com"]
+  stockAlertTo:(CFG.STOCK_ALERT_TO&&CFG.STOCK_ALERT_TO.length)?CFG.STOCK_ALERT_TO:["yramchurn@bspot.com","rsoodarchand@bspot.com"],
+  settings:{}, admins:[], isAdmin:false
 };
 function currentQuarter(d){ d=d||new Date(); return d.getFullYear()+"-Q"+(Math.floor(d.getMonth()/3)+1); }
 function qPretty(q){ const [y,qq]=q.split("-Q"); return "Q"+qq+" "+y; }
@@ -851,6 +856,79 @@ function setView(v){
 }
 
 /* ------------------------------- audit mode -------------------------------- */
+/* ------------------------------ admin console ------------------------------ */
+/* Config overrides live in app_settings["app_config"] and are merged over the
+   committed CFG at load, so admins can change them live without a code deploy. */
+function applyConfigOverrides(){
+  Object.assign(CFG, state.settings||{});
+  state.gerardEmail = CFG.REPORT_TO || state.gerardEmail;
+  if(CFG.APP_TITLE){ try{ document.title=CFG.APP_TITLE; }catch(e){} }
+  applyModules(); updateAdminUI();
+}
+function applyModules(){
+  const m=Object.assign({spares:true,invoices:true,procurement:true}, CFG.MODULES||{});
+  [["spares","navSpares"],["invoices","navInvoices"],["procurement","navProcurement"]].forEach(function(p){ const el=document.getElementById(p[1]); if(el) el.style.display=(m[p[0]]===false)?"none":""; });
+  if(m[state.view]===false) setView("register");
+}
+function updateAdminUI(){ const b=document.getElementById("btnAdmin"); if(b) b.style.display=state.isAdmin?"":"none"; }
+function admField(label,id,v,type){ return '<div class="field"><label>'+esc(label)+'</label><input id="'+id+'" type="'+(type||"text")+'" value="'+esc(v==null?"":v)+'"></div>'; }
+function openAdminConsole(){
+  if(!store.live){ toast("Sign in to manage settings",true); openAuthModal(); return; }
+  if(!state.isAdmin){ toast("Admins only",true); return; }
+  const g=state.settings||{};
+  const val=(k,d)=>{ const v=(g[k]!==undefined?g[k]:CFG[k]); return v==null?(d==null?"":d):v; };
+  const mod=Object.assign({spares:true,invoices:true,procurement:true}, CFG.MODULES||{}, g.MODULES||{});
+  const chk=b=>b?"checked":"";
+  const body=''
+   +'<div class="adm"><nav class="adm-nav">'
+     +'<button class="adm-tab on" data-sec="general">General</button>'
+     +'<button class="adm-tab" data-sec="reports">Reports</button>'
+     +'<button class="adm-tab" data-sec="stock">Stock alerts</button>'
+     +'<button class="adm-tab" data-sec="invoicing">Invoicing &amp; Drive</button>'
+     +'<button class="adm-tab" data-sec="modules">Modules</button>'
+     +'<button class="adm-tab" data-sec="admins">Admins</button>'
+   +'</nav><div class="adm-body">'
+   +'<section class="adm-sec on" data-sec="general">'+admField("Organisation / office","c_office",val("OFFICE"))+admField("App title (browser tab)","c_title",val("APP_TITLE","Mauritius Asset Register"))+'</section>'
+   +'<section class="adm-sec" data-sec="reports">'+admField("Report recipient email","c_reportto",val("REPORT_TO"))+'<p class="adm-hint">Where the quarterly report is emailed. Slack still posts to MUR Log.</p></section>'
+   +'<section class="adm-sec" data-sec="stock"><label class="adm-check"><input type="checkbox" id="c_clientalerts" '+chk(val("CLIENT_STOCK_ALERTS")!==false)+'> Send low-stock alerts from the app</label>'+admField("Alert settle delay (seconds)","c_delay",val("STOCK_ALERT_DELAY_SEC",20),"number")+'<p class="adm-hint">Delay before a stock change triggers an alert, so quick edits don’t over-send.</p></section>'
+   +'<section class="adm-sec" data-sec="invoicing">'+admField("Default buyer (new invoices)","c_buyer",val("BUYER_DEFAULT"))+admField("Google Drive receipts folder ID","c_drive",val("DRIVE_RECEIPTS_FOLDER_ID"))+admField("Google OAuth client ID","c_gclient",val("GOOGLE_CLIENT_ID"))+'</section>'
+   +'<section class="adm-sec" data-sec="modules"><p class="adm-hint">Turn whole sections of the app on or off for everyone.</p><label class="adm-check"><input type="checkbox" id="m_spares" '+chk(mod.spares!==false)+'> Spares &amp; stock</label><label class="adm-check"><input type="checkbox" id="m_invoices" '+chk(mod.invoices!==false)+'> Invoicing</label><label class="adm-check"><input type="checkbox" id="m_procurement" '+chk(mod.procurement!==false)+'> Procurement</label></section>'
+   +'<section class="adm-sec" data-sec="admins"><p class="adm-hint">Admins can open this console and manage settings.</p><div id="adm-list"></div><div class="adm-addrow"><input id="adm-email" type="email" placeholder="email@bspot.com"><input id="adm-name" type="text" placeholder="Name (optional)"><button class="btn btn-sm btn-primary" id="adm-add">Add admin</button></div></section>'
+   +'</div></div>';
+  openModal("Admin console",body,'<button class="btn" id="mCancel">Close</button><button class="btn btn-primary" id="mSaveCfg">Save settings</button>');
+  $$(".adm-tab").forEach(t=>t.onclick=()=>{ $$(".adm-tab").forEach(x=>x.classList.toggle("on",x===t)); $$(".adm-sec").forEach(x=>x.classList.toggle("on",x.dataset.sec===t.dataset.sec)); });
+  renderAdminList();
+  $("#adm-add").onclick=addAdminFromForm;
+  $("#mCancel").onclick=closeModal;
+  $("#mSaveCfg").onclick=saveAdminConfig;
+}
+function renderAdminList(){
+  const el=$("#adm-list"); if(!el) return;
+  el.innerHTML=(state.admins||[]).map(a=>'<div class="adm-arow"><span><b>'+esc(a.name||a.email)+'</b>'+(a.name?'<span class="adm-em"> · '+esc(a.email)+'</span>':'')+'</span><button class="btn btn-sm adm-rm" data-em="'+esc(a.email)+'">Remove</button></div>').join("")||'<p class="adm-hint">No admins listed yet.</p>';
+  $$(".adm-rm",el).forEach(b=>b.onclick=async()=>{ const em=b.dataset.em; if((state.admins||[]).length<=1){ toast("Keep at least one admin",true); return; } if(!confirm("Remove admin "+em+"?"))return;
+    try{ await store.removeAdmin(em); state.admins=await store.getAdmins(); const me=((state.user&&state.user.email)||"").toLowerCase(); state.isAdmin=state.admins.some(a=>((a.email||"").toLowerCase())===me); renderAdminList(); updateAdminUI(); toast("Removed "+em); }catch(e){ toast(e.message,true); } });
+}
+async function addAdminFromForm(){
+  const em=(($("#adm-email").value)||"").trim().toLowerCase(); const nm=(($("#adm-name").value)||"").trim();
+  if(!/.+@.+\..+/.test(em)){ toast("Enter a valid email",true); return; }
+  try{ await store.addAdmin(em,nm); state.admins=await store.getAdmins(); renderAdminList(); $("#adm-email").value=""; $("#adm-name").value=""; toast("Added "+em); }
+  catch(e){ toast("Couldn't add admin: "+e.message,true); }
+}
+async function saveAdminConfig(){
+  const cfg=Object.assign({},state.settings||{});
+  cfg.OFFICE=$("#c_office").value.trim();
+  cfg.APP_TITLE=$("#c_title").value.trim();
+  cfg.REPORT_TO=$("#c_reportto").value.trim();
+  cfg.CLIENT_STOCK_ALERTS=$("#c_clientalerts").checked;
+  cfg.STOCK_ALERT_DELAY_SEC=Math.max(0,Number($("#c_delay").value)||0);
+  cfg.BUYER_DEFAULT=$("#c_buyer").value.trim();
+  cfg.DRIVE_RECEIPTS_FOLDER_ID=$("#c_drive").value.trim();
+  cfg.GOOGLE_CLIENT_ID=$("#c_gclient").value.trim();
+  cfg.MODULES={spares:$("#m_spares").checked,invoices:$("#m_invoices").checked,procurement:$("#m_procurement").checked};
+  const btn=$("#mSaveCfg"); if(btn) btn.disabled=true;
+  try{ await store.setSetting("app_config",cfg); state.settings=cfg; applyConfigOverrides(); renderAll(); closeModal(); toast("Settings saved — applied for everyone"); }
+  catch(e){ if(btn) btn.disabled=false; toast("Save failed: "+e.message,true); }
+}
 async function finishCheck(){
   setAuditMode(false);
   if(!store.live){ toast("Check paused — progress saved (sign in to log to Slack)"); return; }
@@ -1258,6 +1336,14 @@ async function useStore(next){
   try{ state.invoices=await store.allInvoices(); }catch(e){ state.invoices=[]; }
   try{ state.procurement=await store.allProcurement(); }catch(e){ state.procurement=[]; }
   try{ const k=await store.getSetting("newhire_kit"); state.kit=(k&&Array.isArray(k.items)&&k.items.length)?k.items:DEFAULT_KIT.map(x=>Object.assign({},x)); }catch(e){ state.kit=DEFAULT_KIT.map(x=>Object.assign({},x)); }
+  state.admins=[]; state.isAdmin=false;
+  if(store.live){
+    try{ const ov=await store.getSetting("app_config"); if(ov&&typeof ov==="object") state.settings=ov; }catch(e){}
+    try{ state.admins=await store.getAdmins(); }catch(e){ state.admins=[]; }
+    const me=((state.user&&state.user.email)||"").toLowerCase();
+    state.isAdmin=state.admins.some(a=>((a.email||"").toLowerCase())===me);
+  }
+  applyConfigOverrides();
   await loadEntries(); state.loading=false; renderAuth(); renderAll();
 }
 async function onSignedIn(session){ state.user=session.user; if(!state.auditor){ state.auditor=(session.user.user_metadata&&session.user.user_metadata.name)||session.user.email||""; } await useStore(supaStore); toast("Signed in — live data loaded"); subscribeRealtime(); }
@@ -1308,6 +1394,7 @@ async function init(){
   $("#btnAudit").addEventListener("click",()=>setAuditMode(!state.auditMode));
   $("#btnAuditDone").addEventListener("click",finishCheck);
   $("#btnMarkPresent").addEventListener("click",bulkMarkPresent);
+  $("#btnAdmin").addEventListener("click",openAdminConsole);
   $("#nudgeStart").addEventListener("click",()=>setAuditMode(true));
   $("#nudgeDismiss").addEventListener("click",()=>{ localStorage.setItem("mur_nudge_dismissed",state.quarter); $("#checkNudge").style.display="none"; });
   $("#btnReport").addEventListener("click",openReportModal);
