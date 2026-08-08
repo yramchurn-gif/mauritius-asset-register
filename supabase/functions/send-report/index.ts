@@ -53,6 +53,21 @@ Deno.serve(async (req) => {
   // Used by the app's "Finish check" auto-post so a paused/finished check logs to
   // Slack without sending an email every time.
   const slackOnly = p.slack_only === true || p.slackOnly === true;
+  // announcement: a plain team notice posted to Slack (title + body), not a report.
+  const isAnnounce = p.kind === "announcement";
+  if (isAnnounce) {
+    if (!slackOn) return json({ error: "slack not configured" }, 400);
+    const title = String(p.title || "Announcement");
+    const blocks: unknown[] = [
+      { type: "header", text: { type: "plain_text", text: "📣 " + title, emoji: true } },
+    ];
+    if (text) blocks.push({ type: "section", text: { type: "mrkdwn", text: text.slice(0, 2900) } });
+    blocks.push({ type: "actions", elements: [
+      { type: "button", text: { type: "plain_text", text: "Open app", emoji: true }, url: SITE_URL, style: "primary" },
+    ] });
+    const slackRes = await postSlack(title, blocks);
+    return json({ ok: true, sent: { slack: slackRes } });
+  }
   if (!to.length && !slackOnly) return json({ error: "no recipient" }, 400);
   if (slackOnly && !slackOn) return json({ error: "slack not configured" }, 400);
 
