@@ -1061,7 +1061,7 @@ async function onSparesClick(ev){
 }
 
 /* --------------------------------- modals ---------------------------------- */
-function openModal(title,bodyHTML,footHTML,narrow){ $("#modalTitle").textContent=title; $("#modalBody").innerHTML=bodyHTML; $("#modalFoot").innerHTML=footHTML||""; $(".modal").classList.toggle("narrow",!!narrow); $("#scrim").classList.add("show"); }
+function openModal(title,bodyHTML,footHTML,narrow){ $("#modalTitle").textContent=title; $("#modalBody").innerHTML=bodyHTML; $("#modalFoot").innerHTML=footHTML||""; $(".modal").classList.toggle("narrow",!!narrow); $(".modal").classList.remove("wide"); $("#scrim").classList.add("show"); }
 function closeModal(){ $("#scrim").classList.remove("show"); }
 
 function openAuthModal(){
@@ -1255,34 +1255,184 @@ function buildCSV(){
 function download(filename,data,mime){
   try{ const blob=new Blob([data],{type:mime||"text/plain;charset=utf-8"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000); toast("Downloaded "+filename); }catch(e){ toast("Download failed",true); }
 }
-function openReportModal(){
-  const report=buildReport(); const qslug=state.quarter.replace("-","_");
-  openModal("Equipment-check report — "+qPretty(state.quarter),
-    (store.live?"":'<p class="hint">You’re on sample data — this report reflects the demo set. Sign in to report the live register.</p>')+
-    '<div class="field"><label>Send to</label><input id="r_to" value="'+esc(state.gerardEmail)+'"></div><div class="report-preview">'+esc(report)+'</div>',
-    '<button class="btn" id="r_csv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>Download CSV</button><button class="btn" id="r_txt">Download report</button><button class="btn btn-primary" id="r_mail"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18v12H3z"/><path d="M3 7l9 6 9-6"/></svg>Email report</button>');
-  $("#r_csv").onclick=()=>download("MUR_equipment_check_"+qslug+".csv",buildCSV(),"text/csv;charset=utf-8");
-  $("#r_txt").onclick=()=>download("MUR_equipment_check_"+qslug+".txt",buildReport());
-  $("#r_mail").onclick=async()=>{ const to=$("#r_to").value.trim()||state.gerardEmail; state.gerardEmail=to; localStorage.setItem("mur_gerard",to);
-    const subj="Mauritius Quarterly Equipment Check — "+qPretty(state.quarter);
-    const body=buildReport();
-    const btn=$("#r_mail");
-    // Preferred: send server-side through the send-report Edge Function (works
-    // without a desktop mail client, and attaches the CSV). Falls back to a
-    // mailto: link when not signed in or the function isn't available.
-    if(store.live && sb){
-      btn.disabled=true; const old=btn.innerHTML; btn.textContent="Sending…";
-      try{
-        const {data,error}=await sb.functions.invoke("send-report",{body:{to,subject:subj,text:body,csv_base64:b64(buildCSV()),csv_name:"MUR_equipment_check_"+qslug+".csv"}});
-        if(error) throw error;
-        if(data&&data.error) throw new Error(data.error+(data.detail?(" — "+data.detail):""));
-        toast("Report emailed to "+to); closeModal(); return;
-      }catch(e){ toast("Couldn't send: "+e.message+" — opening your mail app instead",true); mailtoReport(to,subj,body); }
-      finally{ btn.disabled=false; btn.innerHTML=old; }
-    } else {
-      mailtoReport(to,subj,body);
+/* ---- report builder: a modular, reorderable report with live sheet preview,
+   ported from the recruitment-master-dashboard report schematic. Sections toggle
+   on/off, reorder (drag or arrows), and you can add free-text sections. Preview /
+   HTML / plain-text modes, print, copy, CSV, and email (via send-report). ---- */
+const ST_L=st=>(ST[st]||ST.pending).l;
+const ASSET_COLS=[
+  {key:"tag",label:"Tag",on:true,val:a=>a.tag},
+  {key:"assignee",label:"Assignee",on:true,val:a=>a.assignee||"—"},
+  {key:"type",label:"Type",on:false,val:a=>a.type},
+  {key:"model",label:"Model",on:true,val:a=>a.model},
+  {key:"variant",label:"Variant",on:false,val:a=>a.variant},
+  {key:"spec",label:"Spec",on:false,val:a=>a.spec},
+  {key:"chip",label:"Chip",on:false,val:a=>a.chip},
+  {key:"serial",label:"Serial",on:true,val:a=>a.serial},
+  {key:"status",label:"Condition",on:true,val:a=>ST_L(entry(a.tag).status)},
+  {key:"note",label:"Note",on:false,val:a=>entry(a.tag).note||""},
+  {key:"checkedBy",label:"Checked by",on:false,val:a=>entry(a.tag).by||""}
+];
+const REPORT_SECTIONS=[
+  {key:"summary",label:"Summary",on:true,render:d=>{
+    const t=[["Assets in service",d.s.total],["Present",d.s.present],["Damaged",d.damaged.length],["Missing",d.missing.length],["Needs replacement",d.replace.length],["Not yet checked",d.pending.length],["Missing accessories",d.gaps.length]];
+    return '<section class="sheet-sec"><h3>Summary</h3><div class="sheet-kpis">'+t.map(x=>'<div class="skpi"><div class="v">'+x[1]+'</div><div class="l">'+esc(x[0])+'</div></div>').join("")+'</div></section>';
+  }},
+  {key:"attention",label:"Needs attention",on:true,render:d=>{
+    const rows=d.missing.concat(d.damaged,d.replace); if(!rows.length) return "";
+    return '<section class="sheet-sec"><h3>Needs attention ('+rows.length+')</h3><table class="sheet-tbl"><thead><tr><th>Tag</th><th>Assignee</th><th>Model</th><th>Status</th><th>Note</th></tr></thead><tbody>'+
+      rows.map(a=>{const e=entry(a.tag);return '<tr><td>'+esc(a.tag)+'</td><td>'+esc(a.assignee||"—")+'</td><td>'+esc(a.model)+'</td><td>'+esc(ST_L(e.status))+'</td><td>'+esc(e.note||"")+'</td></tr>';}).join("")+'</tbody></table></section>';
+  }},
+  {key:"accessories",label:"Missing accessories",on:true,render:d=>{
+    if(!d.gaps.length) return "";
+    return '<section class="sheet-sec"><h3>Missing accessories ('+d.gaps.length+')</h3><ul class="sheet-ul">'+d.gaps.map(a=>'<li><b>'+esc(a.tag)+'</b> '+esc(a.assignee||"")+' — '+esc(periphMissing(a).join(", "))+'</li>').join("")+'</ul></section>';
+  }},
+  {key:"reassignments",label:"Reassignments to confirm",on:false,render:d=>{
+    if(!d.reassigned.length) return "";
+    return '<section class="sheet-sec"><h3>Reassignments to confirm ('+d.reassigned.length+')</h3><ul class="sheet-ul">'+d.reassigned.map(a=>'<li><b>'+esc(a.tag)+'</b> now '+esc(a.assignee)+' (from '+esc(a.reassignedFrom)+')</li>').join("")+'</ul></section>';
+  }},
+  {key:"pending",label:"Not yet checked",on:false,render:d=>{
+    if(!d.pending.length) return "";
+    return '<section class="sheet-sec"><h3>Not yet checked ('+d.pending.length+')</h3><p class="sheet-tags">'+d.pending.map(a=>esc(a.tag)).join(", ")+'</p></section>';
+  }},
+  {key:"monitors",label:"Monitors",on:false,render:d=>{
+    const m=d.mon; if(!(m.total||m.spareQty)) return "";
+    const t=[["Deployed",m.total],["In use",m.inUse],["Office",m.office],["Home",m.home],["Broken",m.broken],["Spare in stock",m.spareQty]];
+    return '<section class="sheet-sec"><h3>Monitors</h3><div class="sheet-kpis">'+t.map(x=>'<div class="skpi"><div class="v">'+x[1]+'</div><div class="l">'+esc(x[0])+'</div></div>').join("")+'</div></section>';
+  }},
+  {key:"spares",label:"Spares & stock",on:false,render:d=>{
+    if(!state.spares.length) return "";
+    const rows=state.spares.slice().sort((a,b)=>(a.category+a.item).localeCompare(b.category+b.item));
+    return '<section class="sheet-sec"><h3>Spares & stock ('+rows.length+')</h3><table class="sheet-tbl"><thead><tr><th>Qty</th><th>Item</th><th>Category</th><th>Status</th></tr></thead><tbody>'+
+      rows.map(sp=>'<tr><td>'+sp.qty+'</td><td>'+esc(sp.item)+'</td><td>'+esc(sp.category)+'</td><td>'+(isLow(sp)?('LOW (min '+sp.min_qty+')'):'OK')+'</td></tr>').join("")+'</tbody></table></section>';
+  }},
+  {key:"dupserials",label:"Duplicate serials (data check)",on:false,render:d=>{
+    const bySerial={}; d.act.forEach(a=>{const k=(a.serial||"").trim().toLowerCase(); if(k)(bySerial[k]=bySerial[k]||[]).push(a);});
+    const dups=Object.keys(bySerial).map(k=>bySerial[k]).filter(g=>g.length>1);
+    if(!dups.length) return "";
+    return '<section class="sheet-sec"><h3>Duplicate serials ('+dups.length+')</h3><ul class="sheet-ul">'+dups.map(g=>'<li><b>'+esc(g[0].serial)+'</b> → '+esc(g.map(a=>a.tag).join(", "))+'</li>').join("")+'</ul></section>';
+  }},
+  {key:"assets",label:"Full asset table",on:false,cols:true,render:d=>{
+    const cols=ASSET_COLS.filter(c=>rptState.fields.indexOf(c.key)!==-1); const use=cols.length?cols:ASSET_COLS.filter(c=>c.on);
+    return '<section class="sheet-sec"><h3>Full register ('+d.act.length+')</h3><table class="sheet-tbl"><thead><tr>'+use.map(c=>'<th>'+esc(c.label)+'</th>').join("")+'</tr></thead><tbody>'+
+      d.act.map(a=>'<tr>'+use.map(c=>{const v=c.val(a);return '<td>'+esc(v==null?"":String(v))+'</td>';}).join("")+'</tr>').join("")+'</tbody></table></section>';
+  }}
+];
+var rptState={items:null,fields:null,open:"",drag:null,mode:"preview",cseq:0};
+function rptInit(){ if(rptState.items) return; rptState.items=REPORT_SECTIONS.map(s=>({kind:"std",key:s.key,label:s.label,on:!!s.on})); rptState.fields=ASSET_COLS.filter(c=>c.on).map(c=>c.key); }
+function rptData(){
+  const s=computeStats(); const act=registerAssets(); const by=st=>act.filter(a=>entry(a.tag).status===st);
+  return {s,act,damaged:by("damaged"),missing:by("missing"),replace:by("replace"),pending:by("pending"),
+    reassigned:act.filter(a=>a.reassignedFrom),
+    gaps:act.filter(a=>(a.type==="laptop"||(Array.isArray(a.accessories)&&a.accessories.length))&&entry(a.tag).status!=="pending"&&periphMissing(a).length),
+    mon:computeMonitors()};
+}
+function rptOpts(){ return { title:($("#rb-title")||{}).value||("Equipment-check report — "+qPretty(state.quarter)), intro:($("#rb-intro")||{}).value||"", signoff:($("#rb-signoff")||{}).value||"" }; }
+function rptBuildSheet(o){
+  o=o||rptOpts(); const d=rptData();
+  const head='<div class="sheet-head"><div class="sheet-h1">'+esc(o.title)+'</div><div class="sheet-meta">'+esc(qPretty(state.quarter))+' · '+esc(CFG.OFFICE||"Ebène office")+' · '+new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"long",year:"numeric"})+(o.signoff?(' · Checked by '+esc(o.signoff)):"")+'</div></div>';
+  const intro=o.intro?'<p class="sheet-intro">'+esc(o.intro)+'</p>':"";
+  const body=(rptState.items||[]).map(it=>{
+    if(!it.on) return "";
+    if(it.kind==="custom"){ if(!it.title&&!it.body) return ""; return '<section class="sheet-sec"><h3>'+esc(it.title||"Section")+'</h3><p style="white-space:pre-wrap">'+esc(it.body||"")+'</p></section>'; }
+    const sec=REPORT_SECTIONS.filter(x=>x.key===it.key)[0]; return sec?sec.render(d,o):"";
+  }).join("");
+  const so=o.signoff?'<div class="sheet-signoff">Report compiled by '+esc(o.signoff)+'.</div>':"";
+  return head+intro+body+so;
+}
+function rptRefresh(){
+  const d=rptData(); const c=$("#rb-count"); if(c) c.textContent=d.act.length+" assets · "+d.s.checked+"/"+d.s.total+" checked";
+  const html=rptBuildSheet(); const prev=$("#rb-prev"), src=$("#rb-src"); if(!prev) return;
+  if(rptState.mode==="preview"){ prev.style.display=""; src.style.display="none"; prev.innerHTML='<div class="sheet">'+html+'</div>'; }
+  else { prev.style.display="none"; src.style.display=""; src.value = rptState.mode==="html" ? ('<div class="sheet">'+html+'</div>') : buildReport(); }
+}
+function rptDebounce(){ clearTimeout(rptState._t); rptState._t=setTimeout(rptRefresh,300); }
+function rptMove(i,dir){ const to=i+dir, a=rptState.items; if(to<0||to>=a.length) return; const m=a.splice(i,1)[0]; a.splice(to,0,m); rptPaint(); rptRefresh(); }
+function rptPaint(){
+  const box=$("#rb-secs"); if(!box) return; const items=rptState.items;
+  box.innerHTML=items.map((it,i)=>{
+    const id=it.kind==="custom"?it.cid:it.key;
+    const sec=it.kind==="std"?REPORT_SECTIONS.filter(x=>x.key===it.key)[0]:null;
+    const expandable=(sec&&sec.cols)||it.kind==="custom";
+    let sub="";
+    if(expandable && rptState.open===id){
+      if(sec&&sec.cols){
+        sub='<div class="rb-sub"><div class="rb-hint">Columns in the table.</div><div class="rb-fgrid">'+ASSET_COLS.map(f=>'<label><input type="checkbox" data-fld="'+esc(f.key)+'"'+(rptState.fields.indexOf(f.key)!==-1?" checked":"")+'><span>'+esc(f.label)+'</span></label>').join("")+'</div></div>';
+      } else {
+        sub='<div class="rb-sub"><input type="text" data-ctitle="'+esc(it.cid)+'" placeholder="Section heading" value="'+esc(it.title||"")+'"><textarea data-cbody="'+esc(it.cid)+'" placeholder="Write anything — appears exactly as typed.">'+esc(it.body||"")+'</textarea><button class="rb-mini" data-cdel="'+esc(it.cid)+'">Remove section</button></div>';
+      }
     }
+    return '<div><div class="rb-row" draggable="true" data-idx="'+i+'" data-id="'+esc(id)+'">'+
+      '<span class="grip" title="Drag to reorder"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg></span>'+
+      '<label><input type="checkbox" data-sec="'+esc(id)+'"'+(it.on?" checked":"")+'><span>'+esc(it.kind==="custom"?(it.title||"My section"):it.label)+'</span></label>'+
+      (expandable?'<button class="rb-mini" data-open="'+esc(id)+'">'+(rptState.open===id?"Done":(sec&&sec.cols?"Columns":"Edit"))+'</button>':'')+
+      '<button class="rb-mini" data-mv="up" data-idx="'+i+'"'+(i===0?" disabled":"")+' title="Up"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 15l-6-6-6 6"/></svg></button>'+
+      '<button class="rb-mini" data-mv="down" data-idx="'+i+'"'+(i===items.length-1?" disabled":"")+' title="Down"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></button>'+
+      '</div>'+sub+'</div>';
+  }).join("");
+  rptWire();
+}
+function rptWire(){
+  const box=$("#rb-secs"); if(!box) return;
+  $$('input[data-sec]',box).forEach(cb=>cb.onchange=()=>{ const it=rptState.items.filter(x=>(x.kind==="custom"?x.cid:x.key)===cb.dataset.sec)[0]; if(it){ it.on=cb.checked; rptRefresh(); } });
+  $$('[data-open]',box).forEach(b=>b.onclick=()=>{ rptState.open=(rptState.open===b.dataset.open)?"":b.dataset.open; rptPaint(); });
+  $$('[data-mv]',box).forEach(b=>b.onclick=()=>rptMove(Number(b.dataset.idx), b.dataset.mv==="up"?-1:1));
+  $$('input[data-fld]',box).forEach(cb=>cb.onchange=()=>{ const k=cb.dataset.fld, at=rptState.fields.indexOf(k); if(cb.checked&&at===-1)rptState.fields.push(k); if(!cb.checked&&at!==-1)rptState.fields.splice(at,1); rptRefresh(); });
+  $$('[data-ctitle]',box).forEach(inp=>inp.oninput=()=>{ const it=rptState.items.filter(x=>x.cid===inp.dataset.ctitle)[0]; if(it){ it.title=inp.value; const sp=box.querySelector('.rb-row[data-id="'+(window.CSS&&CSS.escape?CSS.escape(it.cid):it.cid)+'"] label span'); if(sp)sp.textContent=it.title||"My section"; rptDebounce(); } });
+  $$('[data-cbody]',box).forEach(ta=>ta.oninput=()=>{ const it=rptState.items.filter(x=>x.cid===ta.dataset.cbody)[0]; if(it){ it.body=ta.value; rptDebounce(); } });
+  $$('[data-cdel]',box).forEach(b=>b.onclick=()=>{ const id=b.dataset.cdel; rptState.items=rptState.items.filter(x=>x.cid!==id); if(rptState.open===id)rptState.open=""; rptPaint(); rptRefresh(); });
+  $$('.rb-row',box).forEach(row=>{
+    row.ondragstart=e=>{ rptState.drag=Number(row.dataset.idx); row.classList.add("drag"); try{e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",row.dataset.id);}catch(err){} };
+    row.ondragend=()=>{ row.classList.remove("drag"); $$('.rb-row',box).forEach(r=>r.classList.remove("before","after")); rptState.drag=null; };
+    row.ondragover=e=>{ if(rptState.drag==null)return; e.preventDefault(); $$('.rb-row',box).forEach(r=>r.classList.remove("before","after")); const i=Number(row.dataset.idx); if(i!==rptState.drag) row.classList.add(i<rptState.drag?"before":"after"); };
+    row.ondrop=e=>{ e.preventDefault(); $$('.rb-row',box).forEach(r=>r.classList.remove("before","after")); const to=Number(row.dataset.idx); if(rptState.drag==null||to===rptState.drag)return; const m=rptState.items.splice(rptState.drag,1)[0]; rptState.items.splice(to,0,m); rptState.drag=null; rptPaint(); rptRefresh(); };
+  });
+  box.ondragover=e=>{ if(rptState.drag!=null) e.preventDefault(); };
+}
+function rptAddCustom(){ rptState.cseq++; const cid="c"+rptState.cseq; rptState.items.push({kind:"custom",cid:cid,title:"",body:"",on:true}); rptState.open=cid; rptPaint(); rptRefresh(); }
+function rptPrint(){
+  const html='<div class="sheet">'+rptBuildSheet()+'</div>';
+  const css=(function(){ try{ const el=document.querySelector('link[rel="stylesheet"]'); return el?"":""; }catch(e){ return ""; } })();
+  const w=window.open("","_blank"); if(!w){ toast("Allow pop-ups to print",true); return; }
+  w.document.write('<!doctype html><html><head><meta charset="utf-8"><title>'+esc(rptOpts().title)+'</title>'+
+    '<link rel="stylesheet" href="'+location.origin+location.pathname.replace(/[^/]*$/,"")+'styles.css">'+
+    '<style>body{margin:0;padding:22px;background:#fff}.sheet{box-shadow:none;max-width:none}@media print{body{padding:0}}</style>'+
+    '</head><body>'+html+'</body></html>');
+  w.document.close(); w.focus(); setTimeout(()=>{ try{w.print();}catch(e){} },400);
+}
+function openReportModal(){
+  rptInit();
+  const qslug=state.quarter.replace("-","_");
+  if(!$("#rb-title")) { /* first open sets defaults below */ }
+  const body='<div class="rb"><div class="rb-side">'+
+    (store.live?"":'<p class="rb-hint">Sample data — sign in to report the live register.</p>')+
+    '<div class="rb-group"><h4>Sections &amp; order</h4><p class="rb-hint">Drag the handle to reorder, or use the arrows. Tick what goes in.</p><div class="rb-secs" id="rb-secs"></div><button class="btn btn-sm" id="rb-addsec">+ Add my own section</button></div>'+
+    '<div class="rb-group"><h4>Details</h4><div class="field"><label>Report title</label><input id="rb-title" value="'+esc("Equipment-check report — "+qPretty(state.quarter))+'"></div><div class="field"><label>Intro (optional)</label><textarea id="rb-intro" placeholder="Anything to say before the numbers…"></textarea></div><div class="field"><label>Checked by</label><input id="rb-signoff" value="'+esc(state.auditor||"")+'"></div></div>'+
+    '<div class="rb-group"><h4>Email</h4><div class="field"><label>Send to</label><input id="rb-to" value="'+esc(state.gerardEmail)+'"></div></div>'+
+    '</div><div class="rb-main"><div class="rb-prevhead"><span id="rb-count"></span><div class="rb-modes" id="rb-modes"><button data-m="preview" aria-pressed="true">Preview</button><button data-m="html">HTML</button><button data-m="text">Plain text</button></div></div><div class="rb-prev" id="rb-prev"></div><textarea class="rb-src" id="rb-src" readonly style="display:none"></textarea></div></div>';
+  const foot='<button class="btn" id="rb-print">Print</button><button class="btn" id="rb-copy">Copy HTML</button><button class="btn" id="rb-csv">CSV</button><button class="btn" id="rb-txt">Report .txt</button><button class="btn btn-primary" id="rb-mail">Email</button>';
+  openModal("Report — "+qPretty(state.quarter),body,foot);
+  $(".modal").classList.add("wide");
+  rptState.mode="preview";
+  rptPaint();
+  $("#rb-addsec").onclick=rptAddCustom;
+  ["rb-title","rb-intro","rb-signoff"].forEach(id=>{ const el=$("#"+id); if(el) el.oninput=rptDebounce; });
+  $$("#rb-modes button").forEach(b=>b.onclick=()=>{ rptState.mode=b.dataset.m; $$("#rb-modes button").forEach(x=>x.setAttribute("aria-pressed",String(x===b))); rptRefresh(); });
+  $("#rb-print").onclick=rptPrint;
+  $("#rb-copy").onclick=async()=>{ try{ await navigator.clipboard.writeText('<div class="sheet">'+rptBuildSheet()+'</div>'); toast("HTML copied"); }catch(e){ toast("Copy failed",true); } };
+  $("#rb-csv").onclick=()=>download("MUR_equipment_check_"+qslug+".csv",buildCSV(),"text/csv;charset=utf-8");
+  $("#rb-txt").onclick=()=>download("MUR_equipment_check_"+qslug+".txt",buildReport());
+  $("#rb-mail").onclick=async()=>{ const to=($("#rb-to").value||"").trim()||state.gerardEmail; state.gerardEmail=to; try{localStorage.setItem("mur_gerard",to);}catch(e){}
+    const subj="Mauritius Quarterly Equipment Check — "+qPretty(state.quarter); const bodyTxt=buildReport(); const btn=$("#rb-mail");
+    if(store.live && sb){ btn.disabled=true; const old=btn.textContent; btn.textContent="Sending…";
+      try{ const {data,error}=await sb.functions.invoke("send-report",{body:{to,subject:subj,text:bodyTxt,csv_base64:b64(buildCSV()),csv_name:"MUR_equipment_check_"+qslug+".csv"}});
+        if(error) throw error; if(data&&data.error) throw new Error(data.error);
+        toast("Report emailed to "+to); closeModal(); return;
+      }catch(e){ toast("Couldn't send: "+e.message+" — opening your mail app",true); mailtoReport(to,subj,bodyTxt); }
+      finally{ btn.disabled=false; btn.textContent=old; }
+    } else mailtoReport(to,subj,bodyTxt);
   };
+  rptRefresh();
 }
 function mailtoReport(to,subj,body){
   const full=body+"\n\n(The full line-by-line register is attached separately as a CSV — use the Download CSV button.)";
