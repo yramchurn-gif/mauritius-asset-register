@@ -162,6 +162,31 @@ button{font-family:inherit; cursor:pointer;}
 .mode-banner.audit{background:var(--accent-soft); border-color:var(--accent); color:var(--accent-2);}
 .mode-banner.nudge{background:var(--warn-soft); border-color:var(--warn-line); color:var(--warn);}
 
+/* ---- onboarding ---- */
+.ob-list{display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:14px;}
+.ob-card{border:1px solid var(--line); border-radius:var(--r); background:var(--surface); padding:14px 15px;}
+.ob-top{display:flex; align-items:flex-start; gap:10px; margin-bottom:10px;}
+.ob-name{font-size:15px; font-weight:700; color:var(--ink);}
+.ob-role{font-size:12px; color:var(--ink-3); margin-top:2px;}
+.ob-topr{margin-left:auto; display:flex; align-items:center; gap:6px;}
+.ob-prog{font-family:var(--font-mono); font-size:12px; font-weight:700; color:var(--accent);}
+.ob-del svg{width:15px; height:15px;}
+.ob-bar{height:6px; border-radius:100px; background:var(--accent-soft); overflow:hidden; margin-bottom:12px;}
+.ob-bar i{display:block; height:100%; background:var(--accent); border-radius:100px; transition:width .3s ease;}
+.ob-tasks{list-style:none; margin:0 0 10px; padding:0; display:flex; flex-direction:column; gap:2px;}
+.ob-task label{display:flex; align-items:flex-start; gap:9px; font-size:13px; padding:5px 6px; border-radius:7px; cursor:pointer; line-height:1.35;}
+.ob-task label:hover{background:var(--surface-2);}
+.ob-task input{margin-top:2px; width:15px; height:15px; flex:none;}
+.ob-task .ob-done{color:var(--ink-3); text-decoration:line-through;}
+.ob-docs{display:flex; flex-wrap:wrap; gap:6px; padding-top:10px; border-top:1px solid var(--line);}
+.ob-doc{display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:600; color:var(--accent); text-decoration:none; border:1px solid var(--line-2); border-radius:100px; padding:3px 9px; max-width:100%;}
+.ob-doc:hover{background:var(--accent-soft); border-color:var(--accent);}
+.ob-doc svg{width:13px; height:13px; flex:none;}
+.ob-doc span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.ob-doc-x{border:0; background:none; color:var(--ink-3); cursor:pointer; font-size:15px; line-height:1; padding:0 0 0 2px;}
+.ob-doc-x:hover{color:var(--flag);}
+.ob-adddoc{border-style:dashed;}
+
 /* ---- report builder ---- */
 .modal.wide{max-width:1080px;}
 .rb{display:flex; min-height:62vh; max-height:74vh;}

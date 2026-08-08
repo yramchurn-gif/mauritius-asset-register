@@ -49,6 +49,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/><path d="M2 3h3l2.4 12.2a1.5 1.5 0 0 0 1.5 1.2h8.2a1.5 1.5 0 0 0 1.5-1.2L23 7H6"/></svg>
         <span>Procurement</span><span class="nav-count" id="navProcurementCount"></span>
       </button>
+      <button class="nav-item" id="navOnboarding" data-view="onboarding">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+        <span>Onboarding</span><span class="nav-count" id="navOnboardingCount"></span>
+      </button>
     </nav>
 
     <div class="side-foot">
@@ -104,6 +108,9 @@
         </button>
         <button class="btn ctx-procurement" id="btnAddPurchase" title="Add a planned purchase" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Add item</span>
+        </button>
+        <button class="btn ctx-onboarding" id="btnAddHire" title="Start a new-hire checklist" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">New hire</span>
         </button>
         <button class="btn" id="btnReport" title="Compile the quarterly equipment-check report">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v14H5.2L4 20z"/><path d="M8 9h8M8 13h5"/></svg><span class="lbl">Report</span>
@@ -225,6 +232,17 @@
           <p class="inv-lede">Planned purchases for upcoming needs (e.g. new hires). Tick items off as they arrive.</p>
         </div>
         <section id="procurement"></section>
+      </section>
+
+      <section class="view" id="viewOnboarding" hidden>
+        <div class="inv-head">
+          <div class="inv-kpis">
+            <div class="inv-kpi"><span class="inv-k">In progress</span><span class="inv-v tnum" id="obOpen">0</span></div>
+            <div class="inv-kpi"><span class="inv-k">Completed</span><span class="inv-v tnum" id="obDone">0</span></div>
+          </div>
+          <p class="inv-lede">New-hire IT checklists, seeded from the CorpIT “First Day of Onboarding” runbook. Tick tasks as you go and attach any reference links.</p>
+        </div>
+        <section id="onboarding"></section>
       </section>
 
       <footer class="foot">
