@@ -1493,6 +1493,24 @@ const REPORT_SECTIONS=[
     const cols=ASSET_COLS.filter(c=>rptState.fields.indexOf(c.key)!==-1); const use=cols.length?cols:ASSET_COLS.filter(c=>c.on);
     return '<section class="sheet-sec"><h3>Full register ('+d.act.length+')</h3><table class="sheet-tbl"><thead><tr>'+use.map(c=>'<th>'+esc(c.label)+'</th>').join("")+'</tr></thead><tbody>'+
       d.act.map(a=>'<tr>'+use.map(c=>{const v=c.val(a);return '<td>'+esc(v==null?"":String(v))+'</td>';}).join("")+'</tr>').join("")+'</tbody></table></section>';
+  }},
+  {key:"onboarding",label:"Onboarding in progress",on:false,render:()=>{
+    const all=state.onboarding||[]; if(!all.length) return "";
+    return '<section class="sheet-sec"><h3>Onboarding ('+all.length+')</h3><table class="sheet-tbl"><thead><tr><th>Name</th><th>Role</th><th>Started</th><th>Progress</th></tr></thead><tbody>'+
+      all.map(o=>{const p=onboardProgress(o);return '<tr><td>'+esc(o.name||"")+'</td><td>'+esc(o.role||"")+'</td><td>'+esc(o.start||"")+'</td><td>'+p.done+'/'+p.total+' ('+p.pct+'%)</td></tr>';}).join("")+'</tbody></table></section>';
+  }},
+  {key:"staff",label:"Staff & equipment",on:false,render:()=>{
+    const ppl=staffPeople(); if(!ppl.length) return "";
+    return '<section class="sheet-sec"><h3>Staff & equipment ('+ppl.length+')</h3><table class="sheet-tbl"><thead><tr><th>Person</th><th>Items</th><th>Equipment</th></tr></thead><tbody>'+
+      ppl.map(p=>'<tr><td>'+esc(p.name)+'</td><td>'+p.assets.length+'</td><td>'+esc(p.assets.map(a=>a.tag+" "+a.model).join("; "))+'</td></tr>').join("")+'</tbody></table></section>';
+  }},
+  {key:"documents",label:"Documents & links",on:false,render:()=>{
+    const ds=state.documents||[]; if(!ds.length) return "";
+    return '<section class="sheet-sec"><h3>Documents & links ('+ds.length+')</h3><ul class="sheet-ul">'+ds.map(d=>'<li><b>'+esc(d.label||d.url)+'</b>'+(d.category?' — '+esc(d.category):'')+'<br><span style="font-size:11px;color:#585a4e">'+esc(d.url)+'</span></li>').join("")+'</ul></section>';
+  }},
+  {key:"announcements",label:"Recent announcements",on:false,render:()=>{
+    const an=(state.announcements||[]).slice(0,10); if(!an.length) return "";
+    return '<section class="sheet-sec"><h3>Recent announcements</h3>'+an.map(a=>'<div style="margin-bottom:9px"><b>'+esc(a.title||"")+'</b>'+(a.at?' <span style="color:#8c8d7f;font-size:11px">'+new Date(a.at).toLocaleDateString("en-GB")+'</span>':'')+(a.body?'<div style="font-size:12px;color:#333;white-space:pre-wrap">'+esc(a.body)+'</div>':'')+'</div>').join("")+'</section>';
   }}
 ];
 var rptState={items:null,fields:null,open:"",drag:null,mode:"preview",cseq:0};
