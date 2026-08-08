@@ -25,6 +25,12 @@ window.MUR_CONFIG = {
   // the same drop doesn't email twice.
   CLIENT_STOCK_ALERTS: true,
 
+  // Wait this many seconds after the last quantity change before deciding whether
+  // to send a low-stock alert. Stepping 3→0 quickly then counts as one change, so
+  // you get a single alert (and a quick mis-click you undo sends nothing). The
+  // quantity still saves instantly; only the alert waits. Set 0 to alert instantly.
+  STOCK_ALERT_DELAY_SEC: 20,
+
   // Default buyer prefilled on new invoices (from the Invoice Master Tracker).
   BUYER_DEFAULT: "iWynn Solutions LTD",
 
