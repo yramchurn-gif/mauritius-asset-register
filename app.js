@@ -939,15 +939,27 @@ async function invokeStockAlert(payload){
 async function reconcileStockAlert(s){
   if(!s || !stockAlertsEnabled()) return;
   const low = isLow(s);
-  try{
-    if(low && !s.low_alert_sent){
+  if(low && !s.low_alert_sent){
+    s.low_alert_sent=true;                 // arm immediately so a second call can't re-send
+    try{
       await invokeStockAlert({reason:"threshold",item:s.item,category:s.category,qty:s.qty,min_qty:s.min_qty});
-      s.low_alert_sent=true; await store.updateSpare(s.id,{low_alert_sent:true});
-      toast(s.item+" is low — alert emailed");
-    } else if(!low && s.low_alert_sent){
-      s.low_alert_sent=false; await store.updateSpare(s.id,{low_alert_sent:false});
-    }
-  }catch(e){ console.warn("Low-stock alert not sent:",e.message); }
+      await store.updateSpare(s.id,{low_alert_sent:true});
+      toast(s.item+" is low — alert sent");
+    }catch(e){ s.low_alert_sent=false; console.warn("Low-stock alert not sent:",e.message); }  // roll back so it can retry
+  } else if(!low && s.low_alert_sent){
+    s.low_alert_sent=false;
+    try{ await store.updateSpare(s.id,{low_alert_sent:false}); }catch(e){ console.warn("Stock flag not cleared:",e.message); }
+  }
+}
+// Debounce the low-stock check: rapidly stepping a quantity (e.g. 3→0) settles
+// into ONE evaluation of the final quantity instead of firing on every click.
+// Delay is CFG.STOCK_ALERT_DELAY_SEC (default 20s). The quantity itself still
+// saves instantly on each click — only the alert waits for the dust to settle.
+const _stockReconcileTimers={};
+function stockAlertDelayMs(){ const v=CFG.STOCK_ALERT_DELAY_SEC; return (v==null?20:Number(v)||0)*1000; }
+function scheduleStockReconcile(id){
+  clearTimeout(_stockReconcileTimers[id]);
+  _stockReconcileTimers[id]=setTimeout(()=>{ delete _stockReconcileTimers[id]; const s=state.spares.find(x=>x.id===id); if(s) reconcileStockAlert(s); }, stockAlertDelayMs());
 }
 async function sendStockDigestNow(){
   if(!store.live){ toast("Sign in to send stock alerts",true); openAuthModal(); return; }
@@ -966,7 +978,7 @@ async function onSparesClick(ev){
   if(!store.live){ toast("Sign in to update stock",true); openAuthModal(); return; }
   const nq=Math.max(0, s.qty + (btn.dataset.act==="inc"?1:-1));
   s.qty=nq; renderSpares(); renderStats();
-  try{ await store.updateSpare(id,{qty:nq}); setSaved("Stock updated"); await reconcileStockAlert(s); }
+  try{ await store.updateSpare(id,{qty:nq}); setSaved("Stock updated"); scheduleStockReconcile(id); }
   catch(e){ toast(e.message,true); }
 }
 
