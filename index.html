@@ -53,6 +53,18 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
         <span>Onboarding</span><span class="nav-count" id="navOnboardingCount"></span>
       </button>
+      <button class="nav-item" id="navStaff" data-view="staff">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <span>Staff</span><span class="nav-count" id="navStaffCount"></span>
+      </button>
+      <button class="nav-item" id="navDocuments" data-view="documents">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>
+        <span>Documents</span><span class="nav-count" id="navDocumentsCount"></span>
+      </button>
+      <button class="nav-item" id="navAnnouncements" data-view="announcements">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg>
+        <span>Announcements</span><span class="nav-count" id="navAnnouncementsCount"></span>
+      </button>
     </nav>
 
     <div class="side-foot">
@@ -111,6 +123,12 @@
         </button>
         <button class="btn ctx-onboarding" id="btnAddHire" title="Start a new-hire checklist" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">New hire</span>
+        </button>
+        <button class="btn ctx-documents" id="btnAddDoc" title="Add a document link" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Add link</span>
+        </button>
+        <button class="btn ctx-announcements" id="btnAddAnn" title="Post an announcement" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Post</span>
         </button>
         <button class="btn" id="btnReport" title="Compile the quarterly equipment-check report">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h16v14H5.2L4 20z"/><path d="M8 9h8M8 13h5"/></svg><span class="lbl">Report</span>
@@ -243,6 +261,31 @@
           <p class="inv-lede">New-hire IT checklists, seeded from the CorpIT “First Day of Onboarding” runbook. Tick tasks as you go and attach any reference links.</p>
         </div>
         <section id="onboarding"></section>
+      </section>
+
+      <section class="view" id="viewStaff" hidden>
+        <div class="inv-head">
+          <div class="inv-kpis">
+            <div class="inv-kpi"><span class="inv-k">People</span><span class="inv-v tnum" id="stPeople">0</span></div>
+            <div class="inv-kpi"><span class="inv-k">Assigned items</span><span class="inv-v tnum" id="stAssigned">0</span></div>
+          </div>
+          <p class="inv-lede">Everyone with equipment on the register, and what they hold. Click an item to open it.</p>
+        </div>
+        <section id="staff"></section>
+      </section>
+
+      <section class="view" id="viewDocuments" hidden>
+        <div class="inv-head">
+          <p class="inv-lede">A shared hub of links — Confluence runbooks, Google Drive folders, policies. Add anything the team needs to find fast.</p>
+        </div>
+        <section id="documents"></section>
+      </section>
+
+      <section class="view" id="viewAnnouncements" hidden>
+        <div class="inv-head">
+          <p class="inv-lede">Team notices. Post here and optionally push the same message to MUR Log on Slack.</p>
+        </div>
+        <section id="announcements"></section>
       </section>
 
       <footer class="foot">

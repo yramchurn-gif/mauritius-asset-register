@@ -173,7 +173,7 @@ const state = {
   filter:"all", group:"type", q:"", spareSort:"qty", auditMode:false, loading:true,
   user:null, auditor:"", kit:null, gerardEmail:CFG.REPORT_TO||"gcateau@bspot.com",
   stockAlertTo:(CFG.STOCK_ALERT_TO&&CFG.STOCK_ALERT_TO.length)?CFG.STOCK_ALERT_TO:["yramchurn@bspot.com","rsoodarchand@bspot.com"],
-  settings:{}, admins:[], isAdmin:false, onboarding:[]
+  settings:{}, admins:[], isAdmin:false, onboarding:[], documents:[], announcements:[]
 };
 /* Seeded from CorpIT → "KB: IT First Day of Onboarding" (gpn-dev Confluence). */
 const DEFAULT_ONBOARD=[
@@ -329,6 +329,9 @@ function renderStats(){
   $("#navInvoicesCount").textContent=state.invoices.length||"";
   { const openp=state.procurement.filter(p=>p.status!=="received").length; $("#navProcurementCount").textContent=openp||""; }
   { const c=$("#navOnboardingCount"); if(c){ const open=(state.onboarding||[]).filter(o=>{const p=onboardProgress(o);return !(p.total&&p.done===p.total);}).length; c.textContent=open||""; } }
+  { const c=$("#navStaffCount"); if(c) c.textContent=staffPeople().length||""; }
+  { const c=$("#navDocumentsCount"); if(c) c.textContent=(state.documents||[]).length||""; }
+  { const c=$("#navAnnouncementsCount"); if(c) c.textContent=(state.announcements||[]).length||""; }
   renderNudge();
 }
 
@@ -889,7 +892,91 @@ function onOnboardingChange(ev){
   const o=(state.onboarding||[]).filter(x=>x.id===card.dataset.id)[0]; if(!o||!o.tasks[Number(cb.dataset.task)]) return;
   o.tasks[Number(cb.dataset.task)].done=cb.checked; saveOnboarding(); renderOnboarding(); renderStats();
 }
-function renderView(){ if(state.view==="spares") renderSpares(); else if(state.view==="invoices") renderInvoices(); else if(state.view==="procurement") renderProcurement(); else if(state.view==="onboarding") renderOnboarding(); else renderRegister(); }
+/* ---------------------------- staff directory ----------------------------- */
+function staffPeople(){
+  const map={};
+  activeAssets().filter(a=>a.type!=="infra").forEach(a=>{ const who=(a.assignee||"").trim(); if(!who) return; (map[who]=map[who]||[]).push(a); });
+  return Object.keys(map).sort((a,b)=>a.localeCompare(b)).map(name=>({name:name,assets:map[name]}));
+}
+function staffPass(p){ if(!state.q) return true; return (p.name+" "+p.assets.map(a=>a.tag+" "+a.model).join(" ")).toLowerCase().includes(state.q.toLowerCase()); }
+function staffCardHTML(p){
+  const onb=(state.onboarding||[]).filter(o=>(o.name||"").toLowerCase()===p.name.toLowerCase())[0];
+  let ob=""; if(onb){ const pr=onboardProgress(onb); ob=' · <span class="staff-onb">'+(pr.total&&pr.done===pr.total?"onboarded":("onboarding "+pr.done+"/"+pr.total))+'</span>'; }
+  const items=p.assets.map(a=>'<button class="staff-item" data-tag="'+esc(a.tag)+'" title="Open '+esc(a.tag)+'">'+deviceIcon(a)+'<span class="si-model">'+esc(a.model)+'</span><span class="si-tag">'+esc(a.tag)+'</span>'+(a.reassignedFrom?'<span class="si-re" title="Reassigned from '+esc(a.reassignedFrom)+'">↺</span>':'')+'</button>').join("");
+  return '<div class="staff-card"><div class="staff-chead"><div class="staff-name">'+esc(p.name)+'</div><div class="staff-meta">'+p.assets.length+' item'+(p.assets.length!==1?"s":"")+ob+'</div></div><div class="staff-items">'+items+'</div></div>';
+}
+function renderStaff(){
+  const host=$("#staff"); if(!host) return;
+  if(state.loading){ host.innerHTML=Array(3).fill('<div class="skeleton"></div>').join(""); return; }
+  const all=staffPeople(); const people=all.filter(staffPass);
+  if($("#stPeople")) $("#stPeople").textContent=all.length;
+  if($("#stAssigned")) $("#stAssigned").textContent=activeAssets().filter(a=>a.type!=="infra"&&(a.assignee||"").trim()).length;
+  host.innerHTML=people.length?'<div class="staff-list">'+people.map(staffCardHTML).join("")+'</div>'
+    :'<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg><div>'+(all.length?"No people match this search.":"No assigned equipment yet.")+'</div></div>';
+}
+function onStaffClick(ev){ const b=ev.target.closest(".staff-item"); if(!b) return; const a=state.assets.find(x=>x.tag===b.dataset.tag); if(a) openAssetModal(a); }
+
+/* ------------------------------- documents -------------------------------- */
+function docPass(d){ if(!state.q) return true; return ((d.label||"")+" "+(d.category||"")+" "+(d.url||"")).toLowerCase().includes(state.q.toLowerCase()); }
+function docHost(u){ try{ return new URL(u).hostname.replace(/^www\./,""); }catch(e){ return ""; } }
+function docCardHTML(d,i){
+  return '<div class="doc-card"><a class="doc-open" href="'+esc(d.url)+'" target="_blank" rel="noopener">'+
+    '<span class="doc-ic">'+OB_DOC_IC+'</span><span class="doc-main"><span class="doc-label">'+esc(d.label||d.url)+'</span><span class="doc-sub">'+esc(d.category||docHost(d.url)||"link")+'</span></span></a>'+
+    '<button class="doc-x" data-deldoc="'+i+'" title="Remove" aria-label="Remove">×</button></div>';
+}
+function renderDocuments(){
+  const host=$("#documents"); if(!host) return;
+  if(state.loading){ host.innerHTML=Array(3).fill('<div class="skeleton"></div>').join(""); return; }
+  const list=(state.documents||[]).map((d,i)=>({d:d,i:i})).filter(x=>docPass(x.d));
+  host.innerHTML=list.length?'<div class="doc-list">'+list.map(x=>docCardHTML(x.d,x.i)).join("")+'</div>'
+    :'<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg><div>'+((state.documents||[]).length?"No documents match this search.":"No documents yet. Add a link to Confluence, Drive, anything.")+'</div></div>';
+}
+async function saveDocuments(){ try{ await store.setSetting("documents",state.documents); }catch(e){ toast("Save failed: "+e.message,true); } }
+function openDocModal(){
+  if(!store.live){ toast("Sign in to add documents",true); openAuthModal(); return; }
+  openModal("Add a document link",
+    '<div class="field"><label>Label</label><input id="dc_label" placeholder="e.g. IT Onboarding runbook"></div>'+
+    '<div class="field-row"><div class="field"><label>Category</label><input id="dc_cat" placeholder="e.g. HR, IT, Policy"></div><div class="field"><label>URL</label><input id="dc_url" placeholder="https://"></div></div>',
+    '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Add</button>',true);
+  $("#dc_label").focus();
+  $("#mSave").onclick=async()=>{ const url=($("#dc_url").value||"").trim(); if(!/^https?:\/\//i.test(url)){ toast("Enter a full URL (https://…)",true); return; } state.documents.unshift({label:($("#dc_label").value||"").trim()||url,category:($("#dc_cat").value||"").trim(),url:url}); await saveDocuments(); closeModal(); renderDocuments(); toast("Document added"); };
+  $("#mCancel").onclick=closeModal;
+}
+function onDocumentsClick(ev){ const del=ev.target.closest("[data-deldoc]"); if(!del) return; ev.preventDefault(); const i=Number(del.dataset.deldoc); if(!confirm("Remove this link?"))return; state.documents.splice(i,1); saveDocuments(); renderDocuments(); }
+
+/* ------------------------------ announcements ------------------------------ */
+function annPass(a){ if(!state.q) return true; return ((a.title||"")+" "+(a.body||"")+" "+(a.author||"")).toLowerCase().includes(state.q.toLowerCase()); }
+function annCardHTML(a,i){
+  return '<div class="ann-card"><div class="ann-top"><div class="ann-title">'+esc(a.title||"(untitled)")+'</div><button class="ann-x" data-delann="'+i+'" title="Remove" aria-label="Remove">×</button></div>'+
+    (a.body?'<div class="ann-body">'+esc(a.body)+'</div>':'')+
+    '<div class="ann-meta">'+esc(a.author||"")+(a.at?' · '+new Date(a.at).toLocaleString("en-GB",{day:"2-digit",month:"short",hour:"2-digit",minute:"2-digit"}):"")+(a.slack?' · <span class="ann-slack">MUR Log</span>':'')+'</div></div>';
+}
+function renderAnnouncements(){
+  const host=$("#announcements"); if(!host) return;
+  if(state.loading){ host.innerHTML=Array(2).fill('<div class="skeleton"></div>').join(""); return; }
+  const list=(state.announcements||[]).map((a,i)=>({a:a,i:i})).filter(x=>annPass(x.a));
+  host.innerHTML=list.length?'<div class="ann-list">'+list.map(x=>annCardHTML(x.a,x.i)).join("")+'</div>'
+    :'<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/></svg><div>'+((state.announcements||[]).length?"No announcements match this search.":"No announcements yet.")+'</div></div>';
+}
+async function saveAnnouncements(){ try{ await store.setSetting("announcements",state.announcements); }catch(e){ toast("Save failed: "+e.message,true); } }
+function openAnnModal(){
+  if(!store.live){ toast("Sign in to post",true); openAuthModal(); return; }
+  openModal("New announcement",
+    '<div class="field"><label>Title</label><input id="an_title" placeholder="e.g. Office closed Friday"></div>'+
+    '<div class="field"><label>Message</label><textarea id="an_body" placeholder="Write your notice…"></textarea></div>'+
+    '<label class="adm-check"><input type="checkbox" id="an_slack" checked> Also post to MUR Log on Slack</label>',
+    '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Post</button>',true);
+  $("#an_title").focus();
+  $("#mSave").onclick=async()=>{ const title=($("#an_title").value||"").trim(), body=($("#an_body").value||"").trim(); if(!title&&!body){ toast("Write something first",true); return; }
+    const slack=$("#an_slack").checked; const rec={id:"an"+Date.now().toString(36),title:title,body:body,author:state.auditor||(state.user&&state.user.email)||"",at:new Date().toISOString(),slack:false};
+    const btn=$("#mSave"); btn.disabled=true;
+    if(slack && store.live && sb){ try{ const r=await sb.functions.invoke("send-report",{body:{kind:"announcement",slack_only:true,title:title||"Announcement",text:body}}); if(!r.error && r.data && r.data.sent && r.data.sent.slack) rec.slack=true; }catch(e){} }
+    state.announcements.unshift(rec); await saveAnnouncements(); btn.disabled=false; closeModal(); renderAnnouncements(); toast(rec.slack?"Posted — and to MUR Log":"Posted"); };
+  $("#mCancel").onclick=closeModal;
+}
+function onAnnouncementsClick(ev){ const del=ev.target.closest("[data-delann]"); if(!del) return; const i=Number(del.dataset.delann); if(!confirm("Remove this announcement?"))return; state.announcements.splice(i,1); saveAnnouncements(); renderAnnouncements(); }
+
+function renderView(){ if(state.view==="spares") renderSpares(); else if(state.view==="invoices") renderInvoices(); else if(state.view==="procurement") renderProcurement(); else if(state.view==="onboarding") renderOnboarding(); else if(state.view==="staff") renderStaff(); else if(state.view==="documents") renderDocuments(); else if(state.view==="announcements") renderAnnouncements(); else renderRegister(); }
 function renderAll(){ renderStats(); renderView(); }
 /* True while the user is typing in a field (note box, search, a modal input). */
 function isEditingField(){ const el=document.activeElement; return !!el && (el.tagName==="TEXTAREA" || el.tagName==="INPUT"); }
@@ -909,7 +996,10 @@ const VIEW_META={
   spares:{title:"Spares & stock",sub:"Unassigned inventory",search:"Search spares…"},
   invoices:{title:"Invoicing",sub:"Purchases & receipts",search:"Search vendor, item, reference…"},
   procurement:{title:"Procurement",sub:"Planned purchases",search:"Search planned items…"},
-  onboarding:{title:"Onboarding",sub:"New-hire checklists",search:"Search new hires…"}
+  onboarding:{title:"Onboarding",sub:"New-hire checklists",search:"Search new hires…"},
+  staff:{title:"Staff",sub:"People & their equipment",search:"Search people…"},
+  documents:{title:"Documents",sub:"Links & references",search:"Search documents…"},
+  announcements:{title:"Announcements",sub:"Team notices",search:"Search announcements…"}
 };
 function updateRegisterSub(){
   if(state.view!=="register") return;
@@ -926,7 +1016,7 @@ function setView(v){
   $("#viewSpares").hidden = v!=="spares";
   $("#viewInvoices").hidden = v!=="invoices";
   $("#viewProcurement").hidden = v!=="procurement";
-  { const vo=$("#viewOnboarding"); if(vo) vo.hidden = v!=="onboarding"; }
+  [["viewOnboarding","onboarding"],["viewStaff","staff"],["viewDocuments","documents"],["viewAnnouncements","announcements"]].forEach(function(p){ const el=document.getElementById(p[0]); if(el) el.hidden = v!==p[1]; });
   $("#viewTitle").textContent = m.title;
   $("#viewSub").textContent = m.sub;
   $$(".ctx-register").forEach(e=>e.hidden = v!=="register");
@@ -934,6 +1024,8 @@ function setView(v){
   $$(".ctx-invoices").forEach(e=>e.hidden = v!=="invoices");
   $$(".ctx-procurement").forEach(e=>e.hidden = v!=="procurement");
   $$(".ctx-onboarding").forEach(e=>e.hidden = v!=="onboarding");
+  $$(".ctx-documents").forEach(e=>e.hidden = v!=="documents");
+  $$(".ctx-announcements").forEach(e=>e.hidden = v!=="announcements");
   $("#search").placeholder = m.search;
   document.body.classList.remove("nav-open");
   renderView();
@@ -951,8 +1043,8 @@ function applyConfigOverrides(){
   applyModules(); updateAdminUI();
 }
 function applyModules(){
-  const m=Object.assign({spares:true,invoices:true,procurement:true,onboarding:true}, CFG.MODULES||{});
-  [["spares","navSpares"],["invoices","navInvoices"],["procurement","navProcurement"],["onboarding","navOnboarding"]].forEach(function(p){ const el=document.getElementById(p[1]); if(el) el.style.display=(m[p[0]]===false)?"none":""; });
+  const m=Object.assign({spares:true,invoices:true,procurement:true,onboarding:true,staff:true,documents:true,announcements:true}, CFG.MODULES||{});
+  [["spares","navSpares"],["invoices","navInvoices"],["procurement","navProcurement"],["onboarding","navOnboarding"],["staff","navStaff"],["documents","navDocuments"],["announcements","navAnnouncements"]].forEach(function(p){ const el=document.getElementById(p[1]); if(el) el.style.display=(m[p[0]]===false)?"none":""; });
   if(m[state.view]===false) setView("register");
 }
 function updateAdminUI(){ const b=document.getElementById("btnAdmin"); if(b) b.style.display=state.isAdmin?"":"none"; }
@@ -962,7 +1054,7 @@ function openAdminConsole(){
   if(!state.isAdmin){ toast("Admins only",true); return; }
   const g=state.settings||{};
   const val=(k,d)=>{ const v=(g[k]!==undefined?g[k]:CFG[k]); return v==null?(d==null?"":d):v; };
-  const mod=Object.assign({spares:true,invoices:true,procurement:true,onboarding:true}, CFG.MODULES||{}, g.MODULES||{});
+  const mod=Object.assign({spares:true,invoices:true,procurement:true,onboarding:true,staff:true,documents:true,announcements:true}, CFG.MODULES||{}, g.MODULES||{});
   const chk=b=>b?"checked":"";
   const body=''
    +'<div class="adm"><nav class="adm-nav">'
@@ -977,7 +1069,7 @@ function openAdminConsole(){
    +'<section class="adm-sec" data-sec="reports">'+admField("Report recipient email","c_reportto",val("REPORT_TO"))+'<p class="adm-hint">Where the quarterly report is emailed. Slack still posts to MUR Log.</p></section>'
    +'<section class="adm-sec" data-sec="stock"><label class="adm-check"><input type="checkbox" id="c_clientalerts" '+chk(val("CLIENT_STOCK_ALERTS")!==false)+'> Send low-stock alerts from the app</label>'+admField("Alert settle delay (seconds)","c_delay",val("STOCK_ALERT_DELAY_SEC",20),"number")+'<p class="adm-hint">Delay before a stock change triggers an alert, so quick edits don’t over-send.</p></section>'
    +'<section class="adm-sec" data-sec="invoicing">'+admField("Default buyer (new invoices)","c_buyer",val("BUYER_DEFAULT"))+admField("Google Drive receipts folder ID","c_drive",val("DRIVE_RECEIPTS_FOLDER_ID"))+admField("Google OAuth client ID","c_gclient",val("GOOGLE_CLIENT_ID"))+'</section>'
-   +'<section class="adm-sec" data-sec="modules"><p class="adm-hint">Turn whole sections of the app on or off for everyone.</p><label class="adm-check"><input type="checkbox" id="m_spares" '+chk(mod.spares!==false)+'> Spares &amp; stock</label><label class="adm-check"><input type="checkbox" id="m_invoices" '+chk(mod.invoices!==false)+'> Invoicing</label><label class="adm-check"><input type="checkbox" id="m_procurement" '+chk(mod.procurement!==false)+'> Procurement</label><label class="adm-check"><input type="checkbox" id="m_onboarding" '+chk(mod.onboarding!==false)+'> Onboarding</label></section>'
+   +'<section class="adm-sec" data-sec="modules"><p class="adm-hint">Turn whole sections of the app on or off for everyone.</p><label class="adm-check"><input type="checkbox" id="m_spares" '+chk(mod.spares!==false)+'> Spares &amp; stock</label><label class="adm-check"><input type="checkbox" id="m_invoices" '+chk(mod.invoices!==false)+'> Invoicing</label><label class="adm-check"><input type="checkbox" id="m_procurement" '+chk(mod.procurement!==false)+'> Procurement</label><label class="adm-check"><input type="checkbox" id="m_onboarding" '+chk(mod.onboarding!==false)+'> Onboarding</label><label class="adm-check"><input type="checkbox" id="m_staff" '+chk(mod.staff!==false)+'> Staff directory</label><label class="adm-check"><input type="checkbox" id="m_documents" '+chk(mod.documents!==false)+'> Documents</label><label class="adm-check"><input type="checkbox" id="m_announcements" '+chk(mod.announcements!==false)+'> Announcements</label></section>'
    +'<section class="adm-sec" data-sec="admins"><p class="adm-hint">Admins can open this console and manage settings.</p><div id="adm-list"></div><div class="adm-addrow"><input id="adm-email" type="email" placeholder="email@bspot.com"><input id="adm-name" type="text" placeholder="Name (optional)"><button class="btn btn-sm btn-primary" id="adm-add">Add admin</button></div></section>'
    +'</div></div>';
   openModal("Admin console",body,'<button class="btn" id="mCancel">Close</button><button class="btn btn-primary" id="mSaveCfg">Save settings</button>');
@@ -1009,7 +1101,7 @@ async function saveAdminConfig(){
   cfg.BUYER_DEFAULT=$("#c_buyer").value.trim();
   cfg.DRIVE_RECEIPTS_FOLDER_ID=$("#c_drive").value.trim();
   cfg.GOOGLE_CLIENT_ID=$("#c_gclient").value.trim();
-  cfg.MODULES={spares:$("#m_spares").checked,invoices:$("#m_invoices").checked,procurement:$("#m_procurement").checked,onboarding:$("#m_onboarding").checked};
+  cfg.MODULES={spares:$("#m_spares").checked,invoices:$("#m_invoices").checked,procurement:$("#m_procurement").checked,onboarding:$("#m_onboarding").checked,staff:$("#m_staff").checked,documents:$("#m_documents").checked,announcements:$("#m_announcements").checked};
   const btn=$("#mSaveCfg"); if(btn) btn.disabled=true;
   try{ await store.setSetting("app_config",cfg); state.settings=cfg; applyConfigOverrides(); renderAll(); closeModal(); toast("Settings saved — applied for everyone"); }
   catch(e){ if(btn) btn.disabled=false; toast("Save failed: "+e.message,true); }
@@ -1572,6 +1664,8 @@ async function useStore(next){
   try{ state.procurement=await store.allProcurement(); }catch(e){ state.procurement=[]; }
   try{ const k=await store.getSetting("newhire_kit"); state.kit=(k&&Array.isArray(k.items)&&k.items.length)?k.items:DEFAULT_KIT.map(x=>Object.assign({},x)); }catch(e){ state.kit=DEFAULT_KIT.map(x=>Object.assign({},x)); }
   try{ const ob=await store.getSetting("onboarding_runs"); state.onboarding=Array.isArray(ob)?ob:[]; }catch(e){ state.onboarding=[]; }
+  try{ const dc=await store.getSetting("documents"); state.documents=Array.isArray(dc)?dc:[]; }catch(e){ state.documents=[]; }
+  try{ const an=await store.getSetting("announcements"); state.announcements=Array.isArray(an)?an:[]; }catch(e){ state.announcements=[]; }
   state.admins=[]; state.isAdmin=false;
   if(store.live){
     try{ const ov=await store.getSetting("app_config"); if(ov&&typeof ov==="object") state.settings=ov; }catch(e){}
@@ -1626,6 +1720,14 @@ async function init(){
   { const n=$("#navOnboarding"); if(n) n.addEventListener("click",()=>setView("onboarding")); }
   { const b=$("#btnAddHire"); if(b) b.addEventListener("click",openOnboardModal); }
   { const o=$("#onboarding"); if(o){ o.addEventListener("click",onOnboardingClick); o.addEventListener("change",onOnboardingChange); } }
+  { const n=$("#navStaff"); if(n) n.addEventListener("click",()=>setView("staff")); }
+  { const n=$("#navDocuments"); if(n) n.addEventListener("click",()=>setView("documents")); }
+  { const n=$("#navAnnouncements"); if(n) n.addEventListener("click",()=>setView("announcements")); }
+  { const s=$("#staff"); if(s) s.addEventListener("click",onStaffClick); }
+  { const d=$("#documents"); if(d) d.addEventListener("click",onDocumentsClick); }
+  { const a=$("#announcements"); if(a) a.addEventListener("click",onAnnouncementsClick); }
+  { const b=$("#btnAddDoc"); if(b) b.addEventListener("click",openDocModal); }
+  { const b=$("#btnAddAnn"); if(b) b.addEventListener("click",openAnnModal); }
   $("#navToggle").addEventListener("click",()=>document.body.classList.toggle("nav-open"));
   $("#search").addEventListener("input",e=>{ state.q=e.target.value; clearTimeout(window._searchT); window._searchT=setTimeout(renderView,160); });
   $("#filterType").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.filter=b.dataset.f; $$("#filterType button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderStats(); renderRegister(); updateRegisterSub(); });
