@@ -1,0 +1,15 @@
+{
+  "name": "Mauritius Asset Register",
+  "short_name": "MUR Assets",
+  "description": "Physical asset register, quarterly equipment checks and spare-stock inventory for the Mauritius (Ebène) office.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0C4A3D",
+  "theme_color": "#0F5C4C",
+  "icons": [
+    { "src": "icon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" },
+    { "src": "icon-256.png", "type": "image/png", "sizes": "256x256", "purpose": "any" },
+    { "src": "icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any" }
+  ]
+}

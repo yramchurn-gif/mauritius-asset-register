@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mauritius Asset Register">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#127763"/>
+      <stop offset="1" stop-color="#0C4A3D"/>
+    </linearGradient>
+    <linearGradient id="lid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dfeee9"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded-square badge -->
+  <rect width="512" height="512" rx="116" fill="url(#bg)"/>
+  <rect x="8" y="8" width="496" height="496" rx="110" fill="none" stroke="#ffffff" stroke-opacity="0.10" stroke-width="4"/>
+
+  <!-- laptop: represents the tracked equipment -->
+  <g transform="translate(0,-6)">
+    <!-- screen -->
+    <rect x="150" y="150" width="212" height="146" rx="18" fill="url(#lid)"/>
+    <rect x="150" y="150" width="212" height="146" rx="18" fill="none" stroke="#0C4A3D" stroke-opacity="0.08" stroke-width="3"/>
+    <!-- base / keyboard deck -->
+    <path d="M120 322 h272 a10 10 0 0 1 9.6 12.8 l-6 21 A16 16 0 0 1 384 368 H128 a16 16 0 0 1-15.6-12.2 l-6-21 A10 10 0 0 1 120 322 Z" fill="#ffffff"/>
+    <rect x="214" y="330" width="84" height="9" rx="4.5" fill="#0C4A3D" fill-opacity="0.18"/>
+  </g>
+
+  <!-- check badge: the quarterly equipment check -->
+  <g transform="translate(322,300)">
+    <circle cx="0" cy="0" r="70" fill="#1FB68C"/>
+    <circle cx="0" cy="0" r="70" fill="none" stroke="#0C4A3D" stroke-opacity="0.12" stroke-width="4"/>
+    <path d="M-30 2 L-8 26 L34 -24" fill="none" stroke="#ffffff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="256" y="452" font-family="'JetBrains Mono','SFMono-Regular',ui-monospace,monospace" font-size="60" font-weight="700" letter-spacing="6" fill="#ffffff" text-anchor="middle">MUR</text>
+</svg>
