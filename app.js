@@ -173,8 +173,28 @@ const state = {
   filter:"all", group:"type", q:"", spareSort:"qty", auditMode:false, loading:true,
   user:null, auditor:"", kit:null, gerardEmail:CFG.REPORT_TO||"gcateau@bspot.com",
   stockAlertTo:(CFG.STOCK_ALERT_TO&&CFG.STOCK_ALERT_TO.length)?CFG.STOCK_ALERT_TO:["yramchurn@bspot.com","rsoodarchand@bspot.com"],
-  settings:{}, admins:[], isAdmin:false
+  settings:{}, admins:[], isAdmin:false, onboarding:[]
 };
+/* Seeded from CorpIT → "KB: IT First Day of Onboarding" (gpn-dev Confluence). */
+const DEFAULT_ONBOARD=[
+  "Contact the new employee (confirm onboarding date & time)",
+  "Provide laptop credentials — no Apple ID / FindMy on the machine",
+  "Initial laptop setup",
+  "Sign into Google Chrome (work email, Sync on, Google Password Manager off — use LastPass)",
+  "Send Zoom link & connect for remote access",
+  "Initiate remote access (follow the New Hire & Separation sheet)",
+  "LastPass + authenticator app (Sophos Intercept X)",
+  "Slack — accept invite, desktop app, set title / phone / photo",
+  "VPN profile (Viscosity) if requested",
+  "Assign & tag the laptop in the register",
+  "Assign work phone",
+  "Hand off to the department manager via Slack"
+];
+const DEFAULT_ONBOARD_DOCS=[
+  {label:"KB: IT First Day of Onboarding",url:"https://gpn-dev.atlassian.net/wiki/spaces/CorpIT/pages/4162322433"},
+  {label:"Onboarding & Offboarding Structure",url:"https://gpn-dev.atlassian.net/wiki/spaces/CorpIT/pages/4084006939"},
+  {label:"User Management (On/Offboarding)",url:"https://gpn-dev.atlassian.net/wiki/spaces/CorpIT/pages/2809397269"}
+];
 function currentQuarter(d){ d=d||new Date(); return d.getFullYear()+"-Q"+(Math.floor(d.getMonth()/3)+1); }
 function qPretty(q){ const [y,qq]=q.split("-Q"); return "Q"+qq+" "+y; }
 function recentQuarters(n){ const out=[]; const d=new Date(); for(let i=0;i<n;i++){ out.push(currentQuarter(d)); d.setMonth(d.getMonth()-3); } return out; }
@@ -308,6 +328,7 @@ function renderStats(){
   $("#navSparesCount").textContent=state.spares.length||"";
   $("#navInvoicesCount").textContent=state.invoices.length||"";
   { const openp=state.procurement.filter(p=>p.status!=="received").length; $("#navProcurementCount").textContent=openp||""; }
+  { const c=$("#navOnboardingCount"); if(c){ const open=(state.onboarding||[]).filter(o=>{const p=onboardProgress(o);return !(p.total&&p.done===p.total);}).length; c.textContent=open||""; } }
   renderNudge();
 }
 
@@ -807,7 +828,68 @@ function addNewHireKit(){
 }
 
 /* --------------------------------- views ----------------------------------- */
-function renderView(){ if(state.view==="spares") renderSpares(); else if(state.view==="invoices") renderInvoices(); else if(state.view==="procurement") renderProcurement(); else renderRegister(); }
+/* ------------------------------- onboarding -------------------------------- */
+const OB_DOC_IC='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>';
+const OB_TRASH_IC='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>';
+function onboardProgress(o){ const t=o.tasks||[]; const done=t.filter(x=>x.done).length; return {done,total:t.length,pct:t.length?Math.round(done/t.length*100):0}; }
+function onboardPass(o){ if(!state.q) return true; return ((o.name||"")+" "+(o.role||"")).toLowerCase().includes(state.q.toLowerCase()); }
+function onboardCardHTML(o){
+  const p=onboardProgress(o);
+  const tasks=(o.tasks||[]).map((t,i)=>'<li class="ob-task"><label><input type="checkbox" data-task="'+i+'"'+(t.done?" checked":"")+'><span'+(t.done?' class="ob-done"':'')+'>'+esc(t.t)+'</span></label></li>').join("");
+  const docs=(o.docs||[]).map((d,i)=>'<a class="ob-doc" href="'+esc(d.url)+'" target="_blank" rel="noopener">'+OB_DOC_IC+'<span>'+esc(d.label||d.url)+'</span><button class="ob-doc-x" data-deldoc="'+i+'" title="Remove" aria-label="Remove link">×</button></a>').join("");
+  return '<div class="ob-card" data-id="'+esc(o.id)+'">'+
+    '<div class="ob-top"><div><div class="ob-name">'+esc(o.name||"New hire")+'</div><div class="ob-role">'+esc([o.role,o.start?("started "+o.start):""].filter(Boolean).join("  ·  "))+'</div></div>'+
+      '<div class="ob-topr"><span class="ob-prog">'+p.done+'/'+p.total+'</span><button class="btn btn-ghost icon-btn ob-del" data-obdel="1" title="Remove hire" aria-label="Remove hire">'+OB_TRASH_IC+'</button></div></div>'+
+    '<div class="ob-bar"><i style="width:'+p.pct+'%"></i></div>'+
+    '<ul class="ob-tasks">'+tasks+'</ul>'+
+    '<div class="ob-docs">'+docs+'<button class="btn btn-sm ob-adddoc" data-adddoc="1">+ Document</button></div>'+
+  '</div>';
+}
+function renderOnboarding(){
+  const host=$("#onboarding"); if(!host) return;
+  if(state.loading){ host.innerHTML=Array(2).fill('<div class="skeleton"></div>').join(""); return; }
+  const all=state.onboarding||[]; const list=all.filter(onboardPass);
+  const done=all.filter(o=>{const p=onboardProgress(o);return p.total&&p.done===p.total;}).length;
+  if($("#obOpen")) $("#obOpen").textContent=all.length-done;
+  if($("#obDone")) $("#obDone").textContent=done;
+  host.innerHTML = list.length ? '<div class="ob-list">'+list.map(onboardCardHTML).join("")+'</div>'
+    : '<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg><div>'+(all.length?"No hires match this search.":"No onboarding in progress. Add a new hire to start a checklist.")+'</div></div>';
+}
+async function saveOnboarding(){ try{ await store.setSetting("onboarding_runs",state.onboarding); }catch(e){ toast("Save failed: "+e.message,true); } }
+function openOnboardModal(){
+  if(!store.live){ toast("Sign in to manage onboarding",true); openAuthModal(); return; }
+  openModal("Add a new hire",
+    '<div class="field"><label>Name</label><input id="ob_name" placeholder="e.g. Nathalia Robert"></div>'+
+    '<div class="field-row"><div class="field"><label>Role / department</label><input id="ob_role" placeholder="e.g. CRM"></div><div class="field"><label>Start date</label><input id="ob_start" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div></div>'+
+    '<p class="hint">Creates a checklist from the IT first-day template (from the CorpIT runbook), with the reference docs attached.</p>',
+    '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Create checklist</button>',true);
+  $("#ob_name").focus();
+  $("#mSave").onclick=async()=>{ const name=$("#ob_name").value.trim(); if(!name){ toast("Enter a name",true); return; }
+    const tmpl=(state.settings&&Array.isArray(state.settings.onboarding_template)&&state.settings.onboarding_template.length)?state.settings.onboarding_template:DEFAULT_ONBOARD;
+    const run={id:"ob"+Date.now().toString(36)+Math.floor(Math.random()*1e4).toString(36), name:name, role:$("#ob_role").value.trim(), start:$("#ob_start").value, tasks:tmpl.map(t=>({t:t,done:false})), docs:DEFAULT_ONBOARD_DOCS.map(d=>Object.assign({},d)), note:""};
+    state.onboarding.unshift(run); await saveOnboarding(); closeModal(); renderOnboarding(); renderStats(); toast("Checklist created for "+name); };
+  $("#mCancel").onclick=closeModal;
+}
+function addOnboardDoc(o){
+  openModal("Add a document link",
+    '<div class="field"><label>Label</label><input id="od_label" placeholder="e.g. Offer letter, LastPass guide"></div><div class="field"><label>URL</label><input id="od_url" placeholder="https://  (Confluence, Drive, …)"></div>',
+    '<button class="btn" id="mCancel">Cancel</button><button class="btn btn-primary" id="mSave">Add link</button>',true);
+  $("#od_url").focus();
+  $("#mSave").onclick=()=>{ const url=($("#od_url").value||"").trim(); if(!/^https?:\/\//i.test(url)){ toast("Enter a full URL (https://…)",true); return; } o.docs=o.docs||[]; o.docs.push({label:($("#od_label").value||"").trim()||url,url:url}); saveOnboarding(); closeModal(); renderOnboarding(); };
+  $("#mCancel").onclick=closeModal;
+}
+function onOnboardingClick(ev){
+  const card=ev.target.closest(".ob-card"); if(!card) return; const o=(state.onboarding||[]).filter(x=>x.id===card.dataset.id)[0]; if(!o) return;
+  if(ev.target.closest("[data-obdel]")){ if(!confirm("Remove "+(o.name||"this hire")+" and their checklist?"))return; state.onboarding=state.onboarding.filter(x=>x.id!==o.id); saveOnboarding(); renderOnboarding(); renderStats(); return; }
+  const dd=ev.target.closest("[data-deldoc]"); if(dd){ ev.preventDefault(); (o.docs||[]).splice(Number(dd.dataset.deldoc),1); saveOnboarding(); renderOnboarding(); return; }
+  if(ev.target.closest("[data-adddoc]")){ addOnboardDoc(o); return; }
+}
+function onOnboardingChange(ev){
+  const cb=ev.target.closest('input[data-task]'); if(!cb) return; const card=cb.closest(".ob-card"); if(!card) return;
+  const o=(state.onboarding||[]).filter(x=>x.id===card.dataset.id)[0]; if(!o||!o.tasks[Number(cb.dataset.task)]) return;
+  o.tasks[Number(cb.dataset.task)].done=cb.checked; saveOnboarding(); renderOnboarding(); renderStats();
+}
+function renderView(){ if(state.view==="spares") renderSpares(); else if(state.view==="invoices") renderInvoices(); else if(state.view==="procurement") renderProcurement(); else if(state.view==="onboarding") renderOnboarding(); else renderRegister(); }
 function renderAll(){ renderStats(); renderView(); }
 /* True while the user is typing in a field (note box, search, a modal input). */
 function isEditingField(){ const el=document.activeElement; return !!el && (el.tagName==="TEXTAREA" || el.tagName==="INPUT"); }
@@ -826,7 +908,8 @@ const VIEW_META={
   register:{title:"Register",sub:"Assigned equipment",search:"Search tag, person, device…"},
   spares:{title:"Spares & stock",sub:"Unassigned inventory",search:"Search spares…"},
   invoices:{title:"Invoicing",sub:"Purchases & receipts",search:"Search vendor, item, reference…"},
-  procurement:{title:"Procurement",sub:"Planned purchases",search:"Search planned items…"}
+  procurement:{title:"Procurement",sub:"Planned purchases",search:"Search planned items…"},
+  onboarding:{title:"Onboarding",sub:"New-hire checklists",search:"Search new hires…"}
 };
 function updateRegisterSub(){
   if(state.view!=="register") return;
@@ -843,12 +926,14 @@ function setView(v){
   $("#viewSpares").hidden = v!=="spares";
   $("#viewInvoices").hidden = v!=="invoices";
   $("#viewProcurement").hidden = v!=="procurement";
+  { const vo=$("#viewOnboarding"); if(vo) vo.hidden = v!=="onboarding"; }
   $("#viewTitle").textContent = m.title;
   $("#viewSub").textContent = m.sub;
   $$(".ctx-register").forEach(e=>e.hidden = v!=="register");
   $$(".ctx-spares").forEach(e=>e.hidden = v!=="spares");
   $$(".ctx-invoices").forEach(e=>e.hidden = v!=="invoices");
   $$(".ctx-procurement").forEach(e=>e.hidden = v!=="procurement");
+  $$(".ctx-onboarding").forEach(e=>e.hidden = v!=="onboarding");
   $("#search").placeholder = m.search;
   document.body.classList.remove("nav-open");
   renderView();
@@ -866,8 +951,8 @@ function applyConfigOverrides(){
   applyModules(); updateAdminUI();
 }
 function applyModules(){
-  const m=Object.assign({spares:true,invoices:true,procurement:true}, CFG.MODULES||{});
-  [["spares","navSpares"],["invoices","navInvoices"],["procurement","navProcurement"]].forEach(function(p){ const el=document.getElementById(p[1]); if(el) el.style.display=(m[p[0]]===false)?"none":""; });
+  const m=Object.assign({spares:true,invoices:true,procurement:true,onboarding:true}, CFG.MODULES||{});
+  [["spares","navSpares"],["invoices","navInvoices"],["procurement","navProcurement"],["onboarding","navOnboarding"]].forEach(function(p){ const el=document.getElementById(p[1]); if(el) el.style.display=(m[p[0]]===false)?"none":""; });
   if(m[state.view]===false) setView("register");
 }
 function updateAdminUI(){ const b=document.getElementById("btnAdmin"); if(b) b.style.display=state.isAdmin?"":"none"; }
@@ -877,7 +962,7 @@ function openAdminConsole(){
   if(!state.isAdmin){ toast("Admins only",true); return; }
   const g=state.settings||{};
   const val=(k,d)=>{ const v=(g[k]!==undefined?g[k]:CFG[k]); return v==null?(d==null?"":d):v; };
-  const mod=Object.assign({spares:true,invoices:true,procurement:true}, CFG.MODULES||{}, g.MODULES||{});
+  const mod=Object.assign({spares:true,invoices:true,procurement:true,onboarding:true}, CFG.MODULES||{}, g.MODULES||{});
   const chk=b=>b?"checked":"";
   const body=''
    +'<div class="adm"><nav class="adm-nav">'
@@ -892,7 +977,7 @@ function openAdminConsole(){
    +'<section class="adm-sec" data-sec="reports">'+admField("Report recipient email","c_reportto",val("REPORT_TO"))+'<p class="adm-hint">Where the quarterly report is emailed. Slack still posts to MUR Log.</p></section>'
    +'<section class="adm-sec" data-sec="stock"><label class="adm-check"><input type="checkbox" id="c_clientalerts" '+chk(val("CLIENT_STOCK_ALERTS")!==false)+'> Send low-stock alerts from the app</label>'+admField("Alert settle delay (seconds)","c_delay",val("STOCK_ALERT_DELAY_SEC",20),"number")+'<p class="adm-hint">Delay before a stock change triggers an alert, so quick edits don’t over-send.</p></section>'
    +'<section class="adm-sec" data-sec="invoicing">'+admField("Default buyer (new invoices)","c_buyer",val("BUYER_DEFAULT"))+admField("Google Drive receipts folder ID","c_drive",val("DRIVE_RECEIPTS_FOLDER_ID"))+admField("Google OAuth client ID","c_gclient",val("GOOGLE_CLIENT_ID"))+'</section>'
-   +'<section class="adm-sec" data-sec="modules"><p class="adm-hint">Turn whole sections of the app on or off for everyone.</p><label class="adm-check"><input type="checkbox" id="m_spares" '+chk(mod.spares!==false)+'> Spares &amp; stock</label><label class="adm-check"><input type="checkbox" id="m_invoices" '+chk(mod.invoices!==false)+'> Invoicing</label><label class="adm-check"><input type="checkbox" id="m_procurement" '+chk(mod.procurement!==false)+'> Procurement</label></section>'
+   +'<section class="adm-sec" data-sec="modules"><p class="adm-hint">Turn whole sections of the app on or off for everyone.</p><label class="adm-check"><input type="checkbox" id="m_spares" '+chk(mod.spares!==false)+'> Spares &amp; stock</label><label class="adm-check"><input type="checkbox" id="m_invoices" '+chk(mod.invoices!==false)+'> Invoicing</label><label class="adm-check"><input type="checkbox" id="m_procurement" '+chk(mod.procurement!==false)+'> Procurement</label><label class="adm-check"><input type="checkbox" id="m_onboarding" '+chk(mod.onboarding!==false)+'> Onboarding</label></section>'
    +'<section class="adm-sec" data-sec="admins"><p class="adm-hint">Admins can open this console and manage settings.</p><div id="adm-list"></div><div class="adm-addrow"><input id="adm-email" type="email" placeholder="email@bspot.com"><input id="adm-name" type="text" placeholder="Name (optional)"><button class="btn btn-sm btn-primary" id="adm-add">Add admin</button></div></section>'
    +'</div></div>';
   openModal("Admin console",body,'<button class="btn" id="mCancel">Close</button><button class="btn btn-primary" id="mSaveCfg">Save settings</button>');
@@ -924,7 +1009,7 @@ async function saveAdminConfig(){
   cfg.BUYER_DEFAULT=$("#c_buyer").value.trim();
   cfg.DRIVE_RECEIPTS_FOLDER_ID=$("#c_drive").value.trim();
   cfg.GOOGLE_CLIENT_ID=$("#c_gclient").value.trim();
-  cfg.MODULES={spares:$("#m_spares").checked,invoices:$("#m_invoices").checked,procurement:$("#m_procurement").checked};
+  cfg.MODULES={spares:$("#m_spares").checked,invoices:$("#m_invoices").checked,procurement:$("#m_procurement").checked,onboarding:$("#m_onboarding").checked};
   const btn=$("#mSaveCfg"); if(btn) btn.disabled=true;
   try{ await store.setSetting("app_config",cfg); state.settings=cfg; applyConfigOverrides(); renderAll(); closeModal(); toast("Settings saved — applied for everyone"); }
   catch(e){ if(btn) btn.disabled=false; toast("Save failed: "+e.message,true); }
@@ -1486,6 +1571,7 @@ async function useStore(next){
   try{ state.invoices=await store.allInvoices(); }catch(e){ state.invoices=[]; }
   try{ state.procurement=await store.allProcurement(); }catch(e){ state.procurement=[]; }
   try{ const k=await store.getSetting("newhire_kit"); state.kit=(k&&Array.isArray(k.items)&&k.items.length)?k.items:DEFAULT_KIT.map(x=>Object.assign({},x)); }catch(e){ state.kit=DEFAULT_KIT.map(x=>Object.assign({},x)); }
+  try{ const ob=await store.getSetting("onboarding_runs"); state.onboarding=Array.isArray(ob)?ob:[]; }catch(e){ state.onboarding=[]; }
   state.admins=[]; state.isAdmin=false;
   if(store.live){
     try{ const ov=await store.getSetting("app_config"); if(ov&&typeof ov==="object") state.settings=ov; }catch(e){}
@@ -1537,6 +1623,9 @@ async function init(){
   $("#navSpares").addEventListener("click",()=>setView("spares"));
   $("#navInvoices").addEventListener("click",()=>setView("invoices"));
   $("#navProcurement").addEventListener("click",()=>setView("procurement"));
+  { const n=$("#navOnboarding"); if(n) n.addEventListener("click",()=>setView("onboarding")); }
+  { const b=$("#btnAddHire"); if(b) b.addEventListener("click",openOnboardModal); }
+  { const o=$("#onboarding"); if(o){ o.addEventListener("click",onOnboardingClick); o.addEventListener("change",onOnboardingChange); } }
   $("#navToggle").addEventListener("click",()=>document.body.classList.toggle("nav-open"));
   $("#search").addEventListener("input",e=>{ state.q=e.target.value; clearTimeout(window._searchT); window._searchT=setTimeout(renderView,160); });
   $("#filterType").addEventListener("click",e=>{ const b=e.target.closest("button"); if(!b)return; state.filter=b.dataset.f; $$("#filterType button").forEach(x=>x.setAttribute("aria-pressed",x===b)); renderStats(); renderRegister(); updateRegisterSub(); });
