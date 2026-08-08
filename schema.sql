@@ -209,3 +209,29 @@ alter table public.app_settings enable row level security;
 drop policy if exists "auth full access - settings" on public.app_settings;
 create policy "auth full access - settings" on public.app_settings for all to authenticated using (true) with check (true);
 do $$ begin begin execute 'alter publication supabase_realtime add table public.app_settings'; exception when duplicate_object then null; end; end $$;
+
+-- ---- admins (who can open the admin console) -------------------------------
+-- Everyone signed in can READ the list (to check their own admin status), but
+-- only an existing admin can add/remove admins. The first admin is seeded below;
+-- change the email before running if the first admin should be someone else.
+create table if not exists public.admins (
+  email     text primary key,
+  name      text not null default '',
+  added_by  text not null default '',
+  added_at  timestamptz not null default now()
+);
+alter table public.admins enable row level security;
+-- SECURITY DEFINER so the membership check inside the admins policy doesn't
+-- recurse into the same table's RLS ("infinite recursion detected" otherwise).
+create or replace function public.is_admin() returns boolean
+  language sql security definer stable set search_path = public as
+  $$ select exists (select 1 from public.admins where email = auth.jwt() ->> 'email') $$;
+drop policy if exists "auth read admins"    on public.admins;
+drop policy if exists "admins manage admins" on public.admins;
+create policy "auth read admins" on public.admins for select to authenticated using (true);
+create policy "admins manage admins" on public.admins for all to authenticated
+  using (public.is_admin()) with check (public.is_admin());
+insert into public.admins (email, name, added_by)
+  values ('yramchurn@bspot.com', 'Yuvan Ramchurn', 'system')
+  on conflict (email) do nothing;
+do $$ begin begin execute 'alter publication supabase_realtime add table public.admins'; exception when duplicate_object then null; end; end $$;
