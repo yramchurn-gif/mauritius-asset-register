@@ -1,0 +1,26 @@
+name: Supabase keep-alive
+
+# Free Supabase projects auto-pause after ~7 days with no database activity.
+# This pings the REST API on a schedule so the project stays active. It uses the
+# PUBLIC publishable key (same one already in config.js) — no secrets needed.
+# Manual run: Actions tab → "Supabase keep-alive" → Run workflow.
+
+on:
+  schedule:
+    - cron: "17 6 */2 * *"   # every 2 days at 06:17 UTC
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the database
+        run: |
+          code=$(curl -sS -o /dev/null -w "%{http_code}" \
+            "https://tbtwpeuoglafjklsgklz.supabase.co/rest/v1/assets?select=tag&limit=1" \
+            -H "apikey: sb_publishable_p0C8hgqwMplm1EiL6yeiTQ_4IuDIcvC" \
+            -H "Authorization: Bearer sb_publishable_p0C8hgqwMplm1EiL6yeiTQ_4IuDIcvC")
+          echo "Supabase REST responded: HTTP $code"
+          # 200 (rows/empty via RLS) or 401/403 all mean the DB was reached — that
+          # counts as activity. Only a network failure (000) is a real problem.
+          if [ "$code" = "000" ]; then echo "No response from Supabase"; exit 1; fi
