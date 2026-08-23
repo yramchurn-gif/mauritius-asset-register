@@ -1553,6 +1553,30 @@ function rptBuildSheet(o){
   const so=o.signoff?'<div class="sheet-signoff">Report compiled by '+esc(o.signoff)+'.</div>':"";
   return head+intro+body+so;
 }
+/* Email clients strip <style> blocks, so inline every style onto the elements. */
+function rptEmailHtml(){
+  var h=rptBuildSheet();
+  var S={
+    'class="sheet-head"':'style="border-bottom:2px solid #0F6B52;padding-bottom:12px;margin-bottom:16px"',
+    'class="sheet-h1"':'style="font-size:22px;font-weight:700;color:#0B5240"',
+    'class="sheet-meta"':'style="font-size:12px;color:#585a4e;margin-top:4px"',
+    'class="sheet-intro"':'style="font-size:13px;color:#333;margin:0 0 16px;white-space:pre-wrap"',
+    'class="sheet-sec"':'style="margin-bottom:20px"',
+    'class="sheet-kpis"':'style="margin:0 0 4px"',
+    'class="skpi"':'style="border:1px solid #e2dfd4;border-radius:8px;padding:9px 12px;background:#f6f5ef;display:inline-block;margin:0 6px 6px 0;min-width:84px;vertical-align:top"',
+    'class="v"':'style="font-size:20px;font-weight:700;color:#0B5240"',
+    'class="l"':'style="font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#8c8d7f;font-weight:700"',
+    'class="sheet-tbl"':'style="width:100%;border-collapse:collapse;font-size:12px;margin-top:4px"',
+    'class="sheet-ul"':'style="margin:0;padding-left:18px;font-size:13px"',
+    'class="sheet-tags"':'style="font-family:monospace;font-size:11.5px;color:#585a4e"',
+    'class="sheet-signoff"':'style="margin-top:22px;padding-top:12px;border-top:1px solid #e2dfd4;font-size:12.5px;color:#585a4e;white-space:pre-wrap"'
+  };
+  Object.keys(S).forEach(function(k){ h=h.split(k).join(S[k]); });
+  h=h.split('<h3>').join('<h3 style="font-size:14px;font-weight:700;color:#0B5240;margin:0 0 9px;padding-bottom:5px;border-bottom:1px solid #e2dfd4">');
+  h=h.split('<th>').join('<th style="text-align:left;background:#f6f5ef;color:#585a4e;font-weight:700;padding:6px 8px;border:1px solid #e2dfd4;font-size:10px;text-transform:uppercase">');
+  h=h.split('<td>').join('<td style="padding:6px 8px;border:1px solid #e2dfd4;vertical-align:top;font-size:12px">');
+  return '<div style="background:#fff;color:#1c1d17;max-width:820px;margin:0 auto;padding:18px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif">'+h+'</div>';
+}
 function rptRefresh(){
   const d=rptData(); const c=$("#rb-count"); if(c) c.textContent=d.act.length+" assets · "+d.s.checked+"/"+d.s.total+" checked";
   const html=rptBuildSheet(); const prev=$("#rb-prev"), src=$("#rb-src"); if(!prev) return;
@@ -1636,7 +1660,7 @@ function openReportModal(){
   $("#rb-csv").onclick=()=>download("MUR_equipment_check_"+qslug+".csv",buildCSV(),"text/csv;charset=utf-8");
   $("#rb-txt").onclick=()=>download("MUR_equipment_check_"+qslug+".txt",buildReport());
   $("#rb-mail").onclick=async()=>{ const to=($("#rb-to").value||"").trim()||state.gerardEmail; const cc=($("#rb-cc").value||"").trim(); state.gerardEmail=to; state.reportCc=cc; try{localStorage.setItem("mur_gerard",to);}catch(e){} try{localStorage.setItem("mur_report_cc",cc);}catch(e){}
-    const subj="Mauritius Quarterly Equipment Check — "+qPretty(state.quarter); const bodyTxt=buildReport(); const html='<style>'+RPT_EMAIL_CSS+'</style><div class="sheet">'+rptBuildSheet()+'</div>'; const btn=$("#rb-mail");
+    const subj="Mauritius Quarterly Equipment Check — "+qPretty(state.quarter); const bodyTxt=buildReport(); const html=rptEmailHtml(); const btn=$("#rb-mail");
     if(store.live && sb){ btn.disabled=true; const old=btn.textContent; btn.textContent="Sending…";
       try{ const {data,error}=await sb.functions.invoke("send-report",{body:{to,cc,subject:subj,text:bodyTxt,html:html,csv_base64:b64(buildCSV()),csv_name:"MUR_equipment_check_"+qslug+".csv"}});
         if(error) throw error; if(data&&data.error) throw new Error(data.error);
