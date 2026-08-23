@@ -71,11 +71,17 @@ Deno.serve(async (req) => {
   if (!to.length && !slackOnly) return json({ error: "no recipient" }, 400);
   if (slackOnly && !slackOn) return json({ error: "slack not configured" }, 400);
 
-  const html = `<pre style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;color:#1c1d17">${
-    text.replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]!))
-  }</pre>`;
+  // Rich HTML from the report builder if supplied, else a plain-text <pre> fallback.
+  const html = (typeof p.html === "string" && p.html.trim())
+    ? String(p.html)
+    : `<pre style="font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;white-space:pre-wrap;color:#1c1d17">${
+        text.replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m]!))
+      }</pre>`;
+  const cc = (Array.isArray(p.cc) ? p.cc : String(p.cc || "").split(","))
+    .map((s) => String(s).trim()).filter(Boolean);
 
   const payload: Record<string, unknown> = { from, to, subject, text, html };
+  if (cc.length) payload.cc = cc;
   if (typeof p.csv_base64 === "string" && p.csv_base64) {
     payload.attachments = [{ filename: String(p.csv_name || "register.csv"), content: p.csv_base64 }];
   }

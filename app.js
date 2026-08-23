@@ -1436,6 +1436,24 @@ function download(filename,data,mime){
    ported from the recruitment-master-dashboard report schematic. Sections toggle
    on/off, reorder (drag or arrows), and you can add free-text sections. Preview /
    HTML / plain-text modes, print, copy, CSV, and email (via send-report). ---- */
+/* Inlined sheet styling for the emailed report (email clients ignore styles.css).
+   Fixed light palette; inline-block KPI tiles for client compatibility. */
+const RPT_EMAIL_CSS=".sheet{background:#fff;color:#1c1d17;max-width:820px;margin:0 auto;padding:18px;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}"
++".sheet-head{border-bottom:2px solid #0F6B52;padding-bottom:12px;margin-bottom:16px}"
++".sheet-h1{font-size:22px;font-weight:700;color:#0B5240}"
++".sheet-meta{font-size:12px;color:#585a4e;margin-top:4px}"
++".sheet-intro{font-size:13px;color:#333;margin:0 0 16px;white-space:pre-wrap}"
++".sheet-sec{margin-bottom:20px}"
++".sheet-sec h3{font-size:14px;font-weight:700;color:#0B5240;margin:0 0 9px;padding-bottom:5px;border-bottom:1px solid #e2dfd4}"
++".skpi{border:1px solid #e2dfd4;border-radius:8px;padding:9px 12px;background:#f6f5ef;display:inline-block;margin:0 6px 6px 0;min-width:84px;vertical-align:top}"
++".skpi .v{font-size:20px;font-weight:700;color:#0B5240}"
++".skpi .l{font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#8c8d7f;font-weight:700}"
++".sheet-tbl{width:100%;border-collapse:collapse;font-size:12px}"
++".sheet-tbl th{text-align:left;background:#f6f5ef;color:#585a4e;font-weight:700;padding:6px 8px;border:1px solid #e2dfd4;font-size:10px;text-transform:uppercase}"
++".sheet-tbl td{padding:6px 8px;border:1px solid #e2dfd4;vertical-align:top}"
++".sheet-ul{margin:0;padding-left:18px;font-size:13px}"
++".sheet-tags{font-family:monospace;font-size:11.5px;color:#585a4e}"
++".sheet-signoff{margin-top:22px;padding-top:12px;border-top:1px solid #e2dfd4;font-size:12.5px;color:#585a4e;white-space:pre-wrap}";
 const ST_L=st=>(ST[st]||ST.pending).l;
 const ASSET_COLS=[
   {key:"tag",label:"Tag",on:true,val:a=>a.tag},
@@ -1603,7 +1621,7 @@ function openReportModal(){
     (store.live?"":'<p class="rb-hint">Sample data — sign in to report the live register.</p>')+
     '<div class="rb-group"><h4>Sections &amp; order</h4><p class="rb-hint">Drag the handle to reorder, or use the arrows. Tick what goes in.</p><div class="rb-secs" id="rb-secs"></div><button class="btn btn-sm" id="rb-addsec">+ Add my own section</button></div>'+
     '<div class="rb-group"><h4>Details</h4><div class="field"><label>Report title</label><input id="rb-title" value="'+esc("Equipment-check report — "+qPretty(state.quarter))+'"></div><div class="field"><label>Intro (optional)</label><textarea id="rb-intro" placeholder="Anything to say before the numbers…"></textarea></div><div class="field"><label>Checked by</label><input id="rb-signoff" value="'+esc(state.auditor||"")+'"></div></div>'+
-    '<div class="rb-group"><h4>Email</h4><div class="field"><label>Send to</label><input id="rb-to" value="'+esc(state.gerardEmail)+'"></div></div>'+
+    '<div class="rb-group"><h4>Email</h4><div class="field"><label>Send to</label><input id="rb-to" value="'+esc(state.gerardEmail)+'"></div><div class="field"><label>Cc (optional)</label><input id="rb-cc" value="'+esc(state.reportCc||"")+'" placeholder="name@bspot.com, another@bspot.com"></div></div>'+
     '</div><div class="rb-main"><div class="rb-prevhead"><span id="rb-count"></span><div class="rb-modes" id="rb-modes"><button data-m="preview" aria-pressed="true">Preview</button><button data-m="html">HTML</button><button data-m="text">Plain text</button></div></div><div class="rb-prev" id="rb-prev"></div><textarea class="rb-src" id="rb-src" readonly style="display:none"></textarea></div></div>';
   const foot='<button class="btn" id="rb-print">Print</button><button class="btn" id="rb-copy">Copy HTML</button><button class="btn" id="rb-csv">CSV</button><button class="btn" id="rb-txt">Report .txt</button><button class="btn btn-primary" id="rb-mail">Email</button>';
   openModal("Report — "+qPretty(state.quarter),body,foot);
@@ -1617,12 +1635,12 @@ function openReportModal(){
   $("#rb-copy").onclick=async()=>{ try{ await navigator.clipboard.writeText('<div class="sheet">'+rptBuildSheet()+'</div>'); toast("HTML copied"); }catch(e){ toast("Copy failed",true); } };
   $("#rb-csv").onclick=()=>download("MUR_equipment_check_"+qslug+".csv",buildCSV(),"text/csv;charset=utf-8");
   $("#rb-txt").onclick=()=>download("MUR_equipment_check_"+qslug+".txt",buildReport());
-  $("#rb-mail").onclick=async()=>{ const to=($("#rb-to").value||"").trim()||state.gerardEmail; state.gerardEmail=to; try{localStorage.setItem("mur_gerard",to);}catch(e){}
-    const subj="Mauritius Quarterly Equipment Check — "+qPretty(state.quarter); const bodyTxt=buildReport(); const btn=$("#rb-mail");
+  $("#rb-mail").onclick=async()=>{ const to=($("#rb-to").value||"").trim()||state.gerardEmail; const cc=($("#rb-cc").value||"").trim(); state.gerardEmail=to; state.reportCc=cc; try{localStorage.setItem("mur_gerard",to);}catch(e){} try{localStorage.setItem("mur_report_cc",cc);}catch(e){}
+    const subj="Mauritius Quarterly Equipment Check — "+qPretty(state.quarter); const bodyTxt=buildReport(); const html='<style>'+RPT_EMAIL_CSS+'</style><div class="sheet">'+rptBuildSheet()+'</div>'; const btn=$("#rb-mail");
     if(store.live && sb){ btn.disabled=true; const old=btn.textContent; btn.textContent="Sending…";
-      try{ const {data,error}=await sb.functions.invoke("send-report",{body:{to,subject:subj,text:bodyTxt,csv_base64:b64(buildCSV()),csv_name:"MUR_equipment_check_"+qslug+".csv"}});
+      try{ const {data,error}=await sb.functions.invoke("send-report",{body:{to,cc,subject:subj,text:bodyTxt,html:html,csv_base64:b64(buildCSV()),csv_name:"MUR_equipment_check_"+qslug+".csv"}});
         if(error) throw error; if(data&&data.error) throw new Error(data.error);
-        toast("Report emailed to "+to); closeModal(); return;
+        toast("Report emailed to "+to+(cc?" (cc "+cc+")":"")); closeModal(); return;
       }catch(e){ toast("Couldn't send: "+e.message+" — opening your mail app",true); mailtoReport(to,subj,bodyTxt); }
       finally{ btn.disabled=false; btn.textContent=old; }
     } else mailtoReport(to,subj,bodyTxt);
@@ -1712,6 +1730,7 @@ async function init(){
   applyTheme(localStorage.getItem("mur_theme") || (matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light"));
   state.auditor=localStorage.getItem("mur_auditor")||"";
   state.gerardEmail=localStorage.getItem("mur_gerard")||state.gerardEmail;
+  state.reportCc=localStorage.getItem("mur_report_cc")||"";
   $("#office").textContent=CFG.OFFICE||"Ebène · Regus";
 
   const qs=$("#qSelect"); const ql=recentQuarters(8); if(!ql.includes(state.quarter)) ql.unshift(state.quarter);
