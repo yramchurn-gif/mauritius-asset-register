@@ -11,6 +11,7 @@
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SMTPClient } from "https://deno.land/x/denomailer@1.6.0/mod.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -102,8 +103,33 @@ Deno.serve(async (req) => {
     sent.slack = await postSlack(`${subject}`, blocks);
   }
 
-  // Email (Resend) with the CSV attached.
-  if (resendKey && !slackOnly && to.length) {
+  // Email. Prefer Gmail SMTP (real muroffice@bspot.com sender, no domain to
+  // verify) when GMAIL_USER + GMAIL_APP_PASSWORD are set; otherwise fall back to
+  // Resend. CSV attached either way.
+  const gmailUser = Deno.env.get("GMAIL_USER");
+  const gmailPass = Deno.env.get("GMAIL_APP_PASSWORD");
+  if (!slackOnly && to.length && gmailUser && gmailPass) {
+    try {
+      const client = new SMTPClient({
+        connection: { hostname: "smtp.gmail.com", port: 465, tls: true,
+          auth: { username: gmailUser, password: gmailPass } },
+      });
+      const msg: Record<string, unknown> = {
+        from: Deno.env.get("GMAIL_FROM") || `MUR Office <${gmailUser}>`,
+        to, subject, content: text || " ", html,
+      };
+      if (cc.length) msg.cc = cc;
+      if (typeof p.csv_base64 === "string" && p.csv_base64) {
+        msg.attachments = [{ filename: String(p.csv_name || "register.csv"), content: String(p.csv_base64), encoding: "base64", contentType: "text/csv" }];
+      }
+      // deno-lint-ignore no-explicit-any
+      await client.send(msg as any);
+      await client.close();
+      sent.email = to;
+    } catch (e) {
+      sent.email = `failed:${e instanceof Error ? e.message : e}`;
+    }
+  } else if (resendKey && !slackOnly && to.length) {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Authorization": `Bearer ${resendKey}`, "Content-Type": "application/json" },
