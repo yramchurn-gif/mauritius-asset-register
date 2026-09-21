@@ -1,26 +1,43 @@
 name: Supabase keep-alive
 
-# Free Supabase projects auto-pause after ~7 days with no database activity.
-# This pings the REST API on a schedule so the project stays active. It uses the
-# PUBLIC publishable key (same one already in config.js) — no secrets needed.
-# Manual run: Actions tab → "Supabase keep-alive" → Run workflow.
+# Free Supabase projects auto-pause after ~7 days with no real database activity.
+# A read that RLS blocks wasn't enough, so this does a genuine authenticated WRITE
+# once a day: it upserts a single "keepalive" heartbeat row in app_settings.
+#
+# Setup (one time): add a repository secret named SUPABASE_SERVICE_KEY
+#   GitHub repo → Settings → Secrets and variables → Actions → New repository secret
+#   Value = the project's service_role key (Supabase → Settings → API → service_role).
+# The key is stored encrypted by GitHub, masked in logs, and never committed.
+# This workflow only runs on schedule/manual dispatch, so fork PRs can't read it.
 
 on:
   schedule:
-    - cron: "17 6 */2 * *"   # every 2 days at 06:17 UTC
+    - cron: "17 6 * * *"   # daily at 06:17 UTC
   workflow_dispatch:
 
 jobs:
-  ping:
+  heartbeat:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping the database
+      - name: Authenticated heartbeat write
+        env:
+          SK: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
-          code=$(curl -sS -o /dev/null -w "%{http_code}" \
-            "https://tbtwpeuoglafjklsgklz.supabase.co/rest/v1/assets?select=tag&limit=1" \
-            -H "apikey: sb_publishable_p0C8hgqwMplm1EiL6yeiTQ_4IuDIcvC" \
-            -H "Authorization: Bearer sb_publishable_p0C8hgqwMplm1EiL6yeiTQ_4IuDIcvC")
-          echo "Supabase REST responded: HTTP $code"
-          # 200 (rows/empty via RLS) or 401/403 all mean the DB was reached — that
-          # counts as activity. Only a network failure (000) is a real problem.
-          if [ "$code" = "000" ]; then echo "No response from Supabase"; exit 1; fi
+          if [ -z "$SK" ]; then
+            echo "SUPABASE_SERVICE_KEY secret is not set — add it in repo Settings → Secrets → Actions."
+            exit 1
+          fi
+          now=$(date -u +%FT%TZ)
+          code=$(curl -sS -o /tmp/resp -w "%{http_code}" -X POST \
+            "https://tbtwpeuoglafjklsgklz.supabase.co/rest/v1/app_settings" \
+            -H "apikey: $SK" -H "Authorization: Bearer $SK" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: resolution=merge-duplicates" \
+            --data "{\"key\":\"keepalive\",\"value\":{\"at\":\"$now\",\"by\":\"github-action\"},\"updated_at\":\"$now\"}")
+          echo "Heartbeat write -> HTTP $code"
+          case "$code" in
+            2*)      echo "OK — wrote heartbeat, project is active." ;;
+            401|403) echo "Auth failed — check/rotate the SUPABASE_SERVICE_KEY secret."; cat /tmp/resp; exit 1 ;;
+            000)     echo "Unreachable — project is likely paused; restore it once in the dashboard, then this keeps it awake."; exit 1 ;;
+            *)       echo "Unexpected response:"; cat /tmp/resp; exit 1 ;;
+          esac
